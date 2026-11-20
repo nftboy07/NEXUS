@@ -1,0 +1,15 @@
+body { font-family: system-ui, monospace; background: #0b0f14; color: #d7e0ea; margin: 0; }
+nav { display: flex; gap: 1rem; align-items: center; padding: 0.75rem 1.5rem; border-bottom: 1px solid #1f2a36; flex-wrap: wrap; }
+nav h1 { font-size: 1rem; margin: 0; } nav h1 span { color: #6ea8fe; font-weight: 400; }
+nav ul { display: flex; gap: 0.9rem; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
+nav a { color: #9fb3c8; text-decoration: none; font-size: 0.85rem; } nav a:hover { color: #fff; }
+main { padding: 1.5rem; }
+table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+th, td { text-align: left; padding: 0.35rem 0.6rem; border-bottom: 1px solid #1f2a36; }
+code { color: #6ea8fe; } a code { text-decoration: underline; }
+.badge { background: #17351f; color: #7fd98f; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+.badge.pending { background: #4a3a10; color: #ffd479; }
+section, .card { background: #111822; border: 1px solid #1f2a36; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; }
+input, select, button { background: #0b0f14; color: #d7e0ea; border: 1px solid #2a3a4a; padding: 0.35rem 0.6rem; border-radius: 4px; }
+.error { color: #ff8f8f; }
+h2 { font-size: 1rem; margin-top: 0; } h3 { font-size: 0.95rem; }

@@ -13,6 +13,7 @@ export interface RawChainEntry {
   http_env?: string;
   planned?: boolean;
   start_block?: number;
+  explorer_url?: string;
 }
 
 export interface ChainConfig {

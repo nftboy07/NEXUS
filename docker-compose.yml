@@ -42,3 +42,13 @@ services:
     restart: unless-stopped
 volumes:
   nexus_pg:
+
+  dashboard:
+    build: ./apps/dashboard
+    environment:
+      - NEXUS_API_URL=http://api:8000
+      - NEXUS_API_KEY=${NEXUS_API_KEY}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
