@@ -5,7 +5,7 @@
 import type { Logger } from "@nexus/shared-utils";
 import type { ChainConfig } from "./config.js";
 import type { ChainClients, ChainSource } from "./rpc.js";
-import { viemChainSource } from "./rpc.js";
+import { limitSource, viemChainSource } from "./rpc.js";
 import type { EventStore } from "./store.js";
 import type { EventPublisher } from "./publisher.js";
 import type { ParsedLogFilter } from "./subscriptions.js";
@@ -71,8 +71,20 @@ export class ChainRunner {
     });
   }
 
+  private limited?: { http: unknown; source: ChainSource };
+
+  /** One rate-limited source per active provider, shared by live + backfill. */
   private source(): ChainSource {
-    return viemChainSource(this.state.active.http);
+    const http = this.state.active.http;
+    if (this.limited?.http !== http) {
+      this.limited = {
+        http,
+        source: limitSource(viemChainSource(http), this.deps.rpcConcurrency ?? 8, {
+          onRateLimit: (i) => this.log.warn("rpc rate limited; backing off", i),
+        }),
+      };
+    }
+    return this.limited.source;
   }
 
   private ingest() {

@@ -266,6 +266,89 @@ describe("rpc limiter + error classification", () => {
   });
 });
 
+/** Throttles the first `n` calls of each block's getBlock with a viem-shaped 429. */
+class ThrottlingSource extends JitterSource {
+  throttled = 0;
+  private hits = new Map<bigint, number>();
+  constructor(blocks: SourceBlock[], logs: SourceLog[], private perBlock: number) {
+    super(blocks, logs);
+  }
+  override async getBlock(n: bigint) {
+    const h = this.hits.get(n) ?? 0;
+    if (h < this.perBlock) {
+      this.hits.set(n, h + 1);
+      this.throttled++;
+      throw Object.assign(new Error("HTTP request failed. Status: 429 URL: https://base-rpc.publicnode.com"), { status: 429 });
+    }
+    return super.getBlock(n);
+  }
+}
+
+describe("rate-limit backoff (429 / -32005)", () => {
+  it("classifies viem-shaped errors by status/code, not just message text", () => {
+    expect(isRateLimitError(Object.assign(new Error("HTTP request failed."), { status: 429 }))).toBe(true);
+    expect(isRateLimitError(new Error("wrapped", { cause: Object.assign(new Error("Request exceeds defined limit"), { code: -32005 }) }))).toBe(true);
+    // Infura-style result-size -32005 must still split, not back off.
+    const big = Object.assign(new Error("query returned more than 10000 results"), { code: -32005 });
+    expect(isRateLimitError(big)).toBe(false);
+    expect(isRangeLimitError(big)).toBe(true);
+  });
+
+  it("backfill backs off and completes (no stall, no gaps/dupes) under 429s", async () => {
+    const n = 20n;
+    const { blocks, logs } = syntheticChain(n);
+    const raw = new ThrottlingSource(blocks, logs, 2);
+    const hits: number[] = [];
+    const source = limitSource(raw, 4, { rateLimitBaseMs: 2, rateLimitCapMs: 20, onRateLimit: (i) => hits.push(i.cooldownMs) });
+    const publisher = new FakePublisher();
+    const store = new CheckingStore(publisher, groupByBlock(logs));
+    await store.setCheckpoint(1, 0n, null);
+    await backfillRange(source, filters, { chainId: 1, store, publisher, log }, n, { blockConcurrency: 8, rpcConcurrency: 4 });
+    expect(raw.throttled).toBe(40);
+    expect(hits.length).toBe(40);
+    expect((await store.getCheckpoint(1))?.lastBlock).toBe(n);
+    const keys = publisher.events.map((e) => e.dedup_key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys.length).toBe(logs.length + 20);
+    expect(store.violations).toEqual([]);
+  });
+
+  it("a 429 pauses every call through the source (shared cooldown) and resets on success", async () => {
+    let calls = 0;
+    const starts: number[] = [];
+    const fake = {
+      getBlockNumber: async () => {
+        starts.push(Date.now());
+        if (calls++ === 0) throw Object.assign(new Error("Too Many Requests"), { status: 429 });
+        return 1n;
+      },
+    } as unknown as Parameters<typeof limitSource>[0];
+    const src = limitSource(fake, 4, { rateLimitBaseMs: 60, rateLimitCapMs: 60 });
+    const t0 = Date.now();
+    const first = src.getBlockNumber();
+    await sleep(5);
+    await Promise.all([first, src.getBlockNumber(), src.getBlockNumber()]);
+    // Calls issued during the cooldown waited for it (>= ~0.8 * 60ms).
+    expect(Math.min(...starts.slice(2)) - t0).toBeGreaterThanOrEqual(45);
+  });
+
+  it("gives up after rateLimitRetries so the runner's outer retry can take over", async () => {
+    let calls = 0;
+    const fake = {
+      getBlockNumber: async () => { calls++; throw Object.assign(new Error("x"), { status: 429 }); },
+    } as unknown as Parameters<typeof limitSource>[0];
+    const src = limitSource(fake, 1, { rateLimitRetries: 3, rateLimitBaseMs: 1, rateLimitCapMs: 2 });
+    await expect(src.getBlockNumber()).rejects.toThrow("x");
+    expect(calls).toBe(4);
+  });
+
+  it("limitSource is idempotent (live path + backfill share one budget)", () => {
+    const { blocks, logs } = syntheticChain(2n);
+    const once = limitSource(new JitterSource(blocks, logs), 2);
+    expect(limitSource(once, 8)).toBe(once);
+  });
+});
+
 describe("throughput env config", () => {
   it("defaults are safe for free public RPCs", () => {
     expect(backfillOptionsFromEnv({})).toEqual({ chunkSize: 2000, blockConcurrency: 8, rpcConcurrency: 8 });

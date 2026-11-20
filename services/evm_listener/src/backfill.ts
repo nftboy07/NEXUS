@@ -2,7 +2,7 @@
 // with eth_getLogs + block fetches in bounded chunks, then resume live subs.
 
 import { retry, type Logger } from "@nexus/shared-utils";
-import { limitSource, type ChainSource, type SourceLog } from "./rpc.js";
+import { RANGE_LIMIT_RE, isRateLimitError, limitSource, type ChainSource, type SourceLog } from "./rpc.js";
 import type { ParsedLogFilter } from "./subscriptions.js";
 import { advanceCheckpoint, readCheckpoint } from "./checkpoint.js";
 import { commitPreparedBlock, prepareBlock, type IngestDeps, type PreparedBlock } from "./ingest.js";
@@ -40,20 +40,12 @@ export function planChunks(fromExclusive: bigint, to: bigint, chunkSize: number)
   return chunks;
 }
 
-/** Provider responses that mean "your block range / result set is too big". */
-const RANGE_LIMIT_RE =
-  /more than \d+ results|range too large|too many results|limit exceeded|exceeds? (the )?max|block range|response size|query timeout/i;
+export { isRateLimitError };
 
 /** Throttling is NOT a range problem: splitting on it multiplies requests. */
-const RATE_LIMIT_RE = /rate limit|too many requests|\b429\b|-32005|request limit|throttl/i;
-
-export function isRateLimitError(err: unknown): boolean {
-  return RATE_LIMIT_RE.test(String(err instanceof Error ? err.message : err));
-}
-
 export function isRangeLimitError(err: unknown): boolean {
   const msg = String(err instanceof Error ? err.message : err);
-  return !RATE_LIMIT_RE.test(msg) && RANGE_LIMIT_RE.test(msg);
+  return !isRateLimitError(err) && RANGE_LIMIT_RE.test(msg);
 }
 
 const RPC_RETRY = { baseMs: 250, capMs: 2_000, maxAttempts: 3, jitter: 0.2 };
@@ -145,7 +137,9 @@ export async function backfillRange(
 ): Promise<BackfillResult> {
   const chunkSize = opts.chunkSize ?? 2000;
   const window = Math.max(1, Math.floor(opts.blockConcurrency ?? DEFAULT_BLOCK_CONCURRENCY));
-  const source = limitSource(rawSource, opts.rpcConcurrency ?? DEFAULT_RPC_CONCURRENCY);
+  const source = limitSource(rawSource, opts.rpcConcurrency ?? DEFAULT_RPC_CONCURRENCY, {
+    onRateLimit: (i) => deps.log.warn("rpc rate limited; backing off", i),
+  });
   const cp = await readCheckpoint(deps.store, deps.chainId);
   const fromExclusive = cp.lastBlock;
   const result: BackfillResult = {

@@ -187,11 +187,77 @@ export function createLimiter(max: number) {
   };
 }
 
+export interface LimitOptions {
+  /** Retries of a rate-limited (429 / -32005) call before giving up (default 6). */
+  rateLimitRetries?: number;
+  /** First cooldown after a rate-limit response; doubles per consecutive hit (default 1000ms). */
+  rateLimitBaseMs?: number;
+  rateLimitCapMs?: number;
+  onRateLimit?: (info: { attempt: number; cooldownMs: number; err: string }) => void;
+}
+
+const RATE_LIMIT_RE = /rate limit|too many requests|\b429\b|request limit|throttl/i;
+/** Provider responses that mean "your block range / result set is too big". */
+export const RANGE_LIMIT_RE =
+  /more than \d+ results|range too large|too many results|limit exceeded|exceeds? (the )?max|block range|response size|query timeout/i;
+
+function errChain(err: unknown): Array<{ message?: string; code?: unknown; status?: unknown }> {
+  const out: Array<{ message?: string; code?: unknown; status?: unknown }> = [];
+  let e: unknown = err;
+  for (let i = 0; i < 6 && e; i++) {
+    out.push(typeof e === "object" ? (e as never) : { message: String(e) });
+    e = typeof e === "object" ? (e as { cause?: unknown }).cause : undefined;
+  }
+  return out;
+}
+
+/** HTTP 429, explicit throttling text, or JSON-RPC -32005 that is not a
+ * result-size complaint (Infura-style "more than 10000 results" is also -32005). */
+export function isRateLimitError(err: unknown): boolean {
+  const chain = errChain(err);
+  const msg = chain.map((e) => String(e.message ?? "")).join(" | ");
+  if (chain.some((e) => e.status === 429) || RATE_LIMIT_RE.test(msg)) return true;
+  return chain.some((e) => e.code === -32005 || e.code === 429) && !RANGE_LIMIT_RE.test(msg);
+}
+
+const LIMITED = Symbol("nexus.limitedSource");
+
 /** Wrap a ChainSource so every RPC shares one concurrency budget — keeps a
- * parallel backfill under free public-RPC rate limits. */
-export function limitSource(source: ChainSource, maxConcurrent: number): ChainSource {
-  const run = createLimiter(maxConcurrent);
-  const out: ChainSource = {
+ * parallel backfill under free public-RPC rate limits. A rate-limit response
+ * pauses ALL calls through this source for an exponentially growing, jittered
+ * cooldown (shared, so the window stops hammering the provider) and the call
+ * is retried; success resets the cooldown. Other errors pass through.
+ * Idempotent: wrapping an already-limited source returns it unchanged, so the
+ * live path and backfill share one budget. */
+export function limitSource(source: ChainSource, maxConcurrent: number, opts: LimitOptions = {}): ChainSource {
+  if ((source as { [LIMITED]?: boolean })[LIMITED]) return source;
+  const runSlot = createLimiter(maxConcurrent);
+  const retries = Math.max(0, opts.rateLimitRetries ?? 6);
+  const baseMs = opts.rateLimitBaseMs ?? 1000;
+  const capMs = opts.rateLimitCapMs ?? 30_000;
+  let pausedUntil = 0;
+  let consecutive = 0;
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  const run = async <T>(fn: () => Promise<T>): Promise<T> => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const v = await runSlot(async () => {
+          const wait = pausedUntil - Date.now();
+          if (wait > 0) await sleep(wait);
+          return fn();
+        });
+        consecutive = 0;
+        return v;
+      } catch (err) {
+        if (!isRateLimitError(err) || attempt >= retries) throw err;
+        const exp = Math.min(capMs, baseMs * 2 ** consecutive++);
+        const cooldownMs = Math.round(exp * (0.8 + Math.random() * 0.4));
+        pausedUntil = Math.max(pausedUntil, Date.now() + cooldownMs);
+        opts.onRateLimit?.({ attempt: attempt + 1, cooldownMs, err: String(err instanceof Error ? err.message : err).slice(0, 200) });
+      }
+    }
+  };
+  const out: ChainSource & { [LIMITED]?: boolean } = {
     getBlockNumber: () => run(() => source.getBlockNumber()),
     getBlock: (n) => run(() => source.getBlock(n)),
     getLogs: (args) => run(() => source.getLogs(args)),
@@ -206,5 +272,6 @@ export function limitSource(source: ChainSource, maxConcurrent: number): ChainSo
     const f = source.getBlockReceipts.bind(source);
     out.getBlockReceipts = (n) => run(() => f(n));
   }
+  Object.defineProperty(out, LIMITED, { value: true });
   return out;
 }
