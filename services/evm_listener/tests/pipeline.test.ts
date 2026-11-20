@@ -180,4 +180,38 @@ describe("transactions table", () => {
     expect(row.status).toBe("success");
     expect(row.blockNumber).toBe(50n);
   });
+
+  it("second ingest of the same logs makes zero tx RPC calls", async () => {
+    const blocks = makeBlocks(50n, 50n);
+    const txHash = "0x" + "7".repeat(64);
+    const logs = [mkLog(blocks[0], 0, txHash), mkLog(blocks[0], 1, txHash)];
+    const source = FakeSource.fromFixture(blocks, logs, 50n);
+    const store = new FakeStore();
+    const deps = { chainId: 1, store, publisher: new FakePublisher(), log };
+
+    await ingestTransactions(logs, source, deps);
+    expect(source.txRpcCalls).toBe(2); // tx + receipt, once
+    source.txRpcCalls = 0;
+
+    const again = await ingestTransactions(logs, source, deps);
+    expect(again).toBe(0);
+    expect(source.txRpcCalls).toBe(0);
+  });
+
+  it("ingestTransactions: false disables enrichment entirely", async () => {
+    const blocks = makeBlocks(50n, 50n);
+    const logs = [mkLog(blocks[0], 0, "0x" + "7".repeat(64))];
+    const source = FakeSource.fromFixture(blocks, logs, 50n);
+    const store = new FakeStore();
+    const stored = await ingestTransactions(logs, source, {
+      chainId: 1,
+      store,
+      publisher: new FakePublisher(),
+      log,
+      ingestTransactions: false,
+    });
+    expect(stored).toBe(0);
+    expect(source.txRpcCalls).toBe(0);
+    expect(store.txs.size).toBe(0);
+  });
 });

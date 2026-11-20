@@ -13,6 +13,8 @@ export interface IngestDeps {
   store: EventStore;
   publisher: EventPublisher;
   log: Logger;
+  /** Fetch tx + receipt rows for log tx hashes (env INGEST_TRANSACTIONS, default true). */
+  ingestTransactions?: boolean;
 }
 
 export interface IngestStats {
@@ -76,9 +78,14 @@ export async function ingestTransactions(
   source: ChainSource,
   deps: IngestDeps
 ): Promise<number> {
+  if (deps.ingestTransactions === false) return 0;
   const unique = [...new Set(logs.map((l) => l.transactionHash))].filter(Boolean);
+  // Skip hashes already stored — live + reconcile paths deliver the same
+  // tx twice, so without this every tx costs 2 RPC calls per delivery.
+  const existing = await deps.store.existingTransactions(deps.chainId, unique);
+  const missing = unique.filter((h) => !existing.has(h));
   let stored = 0;
-  for (const hash of unique) {
+  for (const hash of missing) {
     try {
       const [tx, receipt] = await Promise.all([
         retry(() => source.getTransaction(hash), RPC_RETRY),

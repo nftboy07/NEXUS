@@ -51,6 +51,9 @@ export class FakeStore implements EventStore {
     this.txs.set(k, { ...t });
     return "inserted";
   }
+  async existingTransactions(chainId: number, hashes: string[]): Promise<Set<string>> {
+    return new Set(hashes.filter((h) => this.txs.has(`${chainId}:${h}`)));
+  }
   async markLogsRemoved(chainId: number, blockHash: string): Promise<number> {
     let n = 0;
     for (const l of this.logs.values()) {
@@ -94,6 +97,7 @@ export interface GetLogsCall {
 /** Deterministic block/log source serving a fixed fixture chain. */
 export class FakeSource implements ChainSource {
   getLogsCalls: GetLogsCall[] = [];
+  txRpcCalls = 0;
   /** Optional canned transactions by hash. */
   txs = new Map<string, { from: string; to: string | null; value: bigint; status: "success" | "reverted"; blockNumber: bigint }>();
 
@@ -125,10 +129,12 @@ export class FakeSource implements ChainSource {
     );
   }
   async getTransaction(hash: string) {
+    this.txRpcCalls++;
     const t = this.txs.get(hash);
     return { hash, from: t?.from ?? "0x" + "2".repeat(40), to: t?.to ?? "0x" + "3".repeat(40), value: t?.value ?? 0n };
   }
   async getTransactionReceipt(hash: string) {
+    this.txRpcCalls++;
     const t = this.txs.get(hash);
     const log = this.logs.find((l) => l.transactionHash === hash);
     return { status: t?.status ?? ("success" as const), blockNumber: t?.blockNumber ?? log?.blockNumber ?? 0n };

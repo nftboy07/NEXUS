@@ -29,6 +29,8 @@ export interface RunnerDeps {
   chunkSize?: number;
   /** Cold-start depth when no checkpoint row exists (START_BACKFILL_BLOCKS, default 50). */
   startBackfillBlocks?: number;
+  /** Fetch tx+receipt rows for log tx hashes (INGEST_TRANSACTIONS, default true). */
+  ingestTransactions?: boolean;
 }
 
 const DEFAULT_HEARTBEAT_MS = 60_000;
@@ -61,7 +63,13 @@ export class ChainRunner {
   }
 
   private ingest() {
-    return { chainId: this.deps.chain.id, store: this.deps.store, publisher: this.deps.publisher, log: this.log };
+    return {
+      chainId: this.deps.chain.id,
+      store: this.deps.store,
+      publisher: this.deps.publisher,
+      log: this.log,
+      ingestTransactions: this.deps.ingestTransactions,
+    };
   }
 
   /** Serialize block/log work so reorg + backfill can't interleave. */

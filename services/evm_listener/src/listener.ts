@@ -46,6 +46,7 @@ async function main() {
       clients: createChainClients(chain),
       chunkSize: Number(process.env.BACKFILL_CHUNK_SIZE ?? 2000),
       startBackfillBlocks: Number(process.env.START_BACKFILL_BLOCKS ?? 50),
+      ingestTransactions: (process.env.INGEST_TRANSACTIONS ?? "true") !== "false",
       heartbeatTimeoutMs: Number(process.env.HEARTBEAT_TIMEOUT_MS ?? 60_000),
     })),
     (chain, err) => log.error("chain failed to start — continuing with others", { chain: chain.name, err: String(err) })

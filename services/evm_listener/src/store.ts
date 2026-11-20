@@ -45,6 +45,8 @@ export interface EventStore {
   upsertLog(log: StoredLog): Promise<UpsertResult>;
   upsertTransaction(tx: StoredTransaction): Promise<UpsertResult>;
   markLogsRemoved(chainId: number, blockHash: string): Promise<number>;
+  /** Which of `hashes` already have a transactions row on this chain. */
+  existingTransactions(chainId: number, hashes: string[]): Promise<Set<string>>;
   getBlockByNumber(chainId: number, number: bigint): Promise<StoredBlock[]>;
   getCheckpoint(chainId: number): Promise<Checkpoint | null>;
   setCheckpoint(chainId: number, lastBlock: bigint, lastLogCursor: string | null): Promise<void>;
@@ -83,6 +85,15 @@ export class PgStore implements EventStore {
       [t.chainId, t.hash, t.sender, t.recipient, t.value, t.status, t.blockNumber?.toString() ?? null]
     );
     return res.rowCount === 0 ? "duplicate" : "inserted";
+  }
+
+  async existingTransactions(chainId: number, hashes: string[]): Promise<Set<string>> {
+    if (hashes.length === 0) return new Set();
+    const res = await this.pool.query(
+      `SELECT hash FROM transactions WHERE chain_id = $1 AND hash = ANY($2)`,
+      [chainId, hashes]
+    );
+    return new Set(res.rows.map((r: { hash: string }) => r.hash));
   }
 
   async markLogsRemoved(chainId: number, blockHash: string): Promise<number> {
