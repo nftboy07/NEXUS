@@ -27,8 +27,8 @@ jobs:
           - services/dex_monitor
           - packages/shared_utils
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -58,8 +58,8 @@ jobs:
       run:
         working-directory: ${{ matrix.service }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -82,8 +82,8 @@ jobs:
     env:
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -118,6 +118,6 @@ jobs:
       PGPASSWORD: nexus
       PGDATABASE: nexus
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: apply 001..N twice (order + idempotency)
         run: bash scripts/ci_migrations.sh

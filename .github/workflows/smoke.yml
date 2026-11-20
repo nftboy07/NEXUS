@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: write .env
         env:
           ETH_WSS: ${{ inputs.eth_wss || 'wss://ethereum-rpc.publicnode.com' }}
