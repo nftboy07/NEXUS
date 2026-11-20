@@ -392,3 +392,17 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("PgStore batch upserts (live Pos
     await pool.end();
   });
 });
+
+describe("watchBlocks robustness", () => {
+  it("ignores undefined / null-number newHeads frames instead of crashing", async () => {
+    const { watchBlocks } = await import("../src/subscriptions.js");
+    let emit: (b: unknown) => void = () => {};
+    const ws = { watchBlocks: (a: { onBlock: (b: unknown) => void }) => { emit = a.onBlock; return () => {}; } };
+    const seen: bigint[] = [];
+    watchBlocks(ws as never, { onBlock: (b) => { seen.push(b.number); }, onLogs: () => {}, onError: () => {} });
+    expect(() => emit(undefined)).not.toThrow();
+    expect(() => emit({ number: null, hash: null })).not.toThrow();
+    emit({ number: 5n, hash: "0x5", parentHash: "0x4", timestamp: 1n });
+    expect(seen).toEqual([5n]);
+  });
+});

@@ -67,6 +67,9 @@ export function watchBlocks(ws: PublicClient, cb: SubscriptionCallbacks): Subscr
     includeTransactions: false,
     onBlock: (b) => {
       sub.lastMessageAt = Date.now();
+      // Public WS endpoints occasionally emit a newHeads frame viem formats
+      // to undefined/null-number; a throw here would crash the process.
+      if (!b || b.number === null || b.number === undefined) return;
       void cb.onBlock({
         number: b.number,
         hash: b.hash ?? "",
