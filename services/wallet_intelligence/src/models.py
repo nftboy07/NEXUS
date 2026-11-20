@@ -31,6 +31,7 @@ class TransferRecord(BaseModel):
     block_number: int
     log_index: int
     dedup_key: str
+    block_hash: Optional[str] = None
 
 
 class WalletProfile(BaseModel):

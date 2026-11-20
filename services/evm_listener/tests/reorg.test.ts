@@ -92,4 +92,42 @@ describe("reorg handling", () => {
     const at103 = await store.getBlockByNumber(1, 103n);
     expect(at103.map((b) => b.hash)).toContain(blocksA()[3].hash);
   });
+
+  it("publishes one block_removed event per orphaned block, once on replay", async () => {
+    const chainId = 1;
+    const store = new FakeStore();
+    const published: Array<Record<string, unknown>> = [];
+    // Mirror runner.ts: marker insert gates publication.
+    const onOrphaned = async (b: { number: bigint; hash: string }) => {
+      if (await store.insertRemovedBlock(chainId, b.hash)) {
+        published.push({
+          chain_id: chainId,
+          kind: "block_removed",
+          dedup_key: `${chainId}:${b.hash}:removed`,
+          block_number: Number(b.number),
+          payload: { block_hash: b.hash, block_number: Number(b.number) },
+        });
+      }
+    };
+    await store.setCheckpoint(chainId, 99n, null);
+    const sourceA = FakeSource.fromFixture(blocksA(), logsA());
+    await backfillRange(sourceA, filters, { chainId, store, publisher: new FakePublisher(), log }, 106n, { chunkSize: 2000 });
+
+    const sourceB = FakeSource.fromFixture(blocksB(), logsB());
+    const headB = blocksB().find((b) => b.number === 106n)!;
+    const result = await resolveReorg(headB, sourceB, store, chainId, 12, log, onOrphaned);
+
+    expect(result.orphaned.sort()).toEqual([103n, 104n, 105n]);
+    expect(published).toHaveLength(3);
+    for (const ev of published) {
+      expect(ev.kind).toBe("block_removed");
+      expect((ev.dedup_key as string).endsWith(":removed")).toBe(true);
+      expect(blocksA().some((b) => b.hash === (ev.payload as { block_hash: string }).block_hash)).toBe(true);
+    }
+
+    // Replaying the same reorg must not republish (removed_blocks marker).
+    published.length = 0;
+    await resolveReorg(headB, sourceB, store, chainId, 12, log, onOrphaned);
+    expect(published).toHaveLength(0);
+  });
 });

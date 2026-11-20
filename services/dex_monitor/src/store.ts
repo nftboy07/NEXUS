@@ -12,6 +12,8 @@ export interface PoolRow {
   feeTier: number | null;
   createdBlock: bigint | null;
   createdTx: string | null;
+  /** Block hash of the PoolCreated event; set by migration 007 consumers. */
+  blockHash?: string | null;
 }
 
 export interface LiquidityEventRow {
@@ -21,6 +23,7 @@ export interface LiquidityEventRow {
   amount1: string;
   txHash: string;
   blockNumber: bigint;
+  blockHash?: string | null;
 }
 
 export interface ReserveRow {
@@ -30,6 +33,7 @@ export interface ReserveRow {
   reserve1: string | null;
   source: "sync" | "swap_derived" | "partial";
   blockNumber: bigint;
+  blockHash?: string | null;
 }
 
 export interface DexStore {
@@ -50,6 +54,8 @@ export interface DexStore {
   getTransactionSender(chainId: number, txHash: string): Promise<string | null>;
   hasAlert(dedupKey: string): Promise<boolean>;
   insertAlert(destination: string, message: string): Promise<void>;
+  /** Delete rows derived from an orphaned block (reorg propagation). */
+  deleteByBlock(chainId: number, blockHash: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -62,10 +68,10 @@ export class PgDexStore implements DexStore {
 
   async upsertPool(p: PoolRow): Promise<void> {
     await this.pool.query(
-      `INSERT INTO pools (id, dex, token0, token1, chain_id, fee_tier, created_block, created_tx)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      `INSERT INTO pools (id, dex, token0, token1, chain_id, fee_tier, created_block, created_tx, block_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        ON CONFLICT (id) DO NOTHING`,
-      [p.id, p.dex, p.token0, p.token1, p.chainId, p.feeTier, p.createdBlock?.toString() ?? null, p.createdTx]
+      [p.id, p.dex, p.token0, p.token1, p.chainId, p.feeTier, p.createdBlock?.toString() ?? null, p.createdTx, p.blockHash ?? null]
     );
   }
 
@@ -91,18 +97,18 @@ export class PgDexStore implements DexStore {
 
   async insertLiquidityEvent(e: LiquidityEventRow): Promise<void> {
     await this.pool.query(
-      `INSERT INTO liquidity_events (pool_id, event_type, amount0, amount1, tx_hash, block_number)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [e.poolId, e.eventType, e.amount0, e.amount1, e.txHash, e.blockNumber.toString()]
+      `INSERT INTO liquidity_events (pool_id, event_type, amount0, amount1, tx_hash, block_number, block_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [e.poolId, e.eventType, e.amount0, e.amount1, e.txHash, e.blockNumber.toString(), e.blockHash ?? null]
     );
   }
 
   async insertPoolReserve(r: ReserveRow): Promise<void> {
     await this.pool.query(
-      `INSERT INTO pool_reserves (pool_id, chain_id, reserve0, reserve1, source, block_number)
-       VALUES ($1,$2,$3,$4,$5,$6)
+      `INSERT INTO pool_reserves (pool_id, chain_id, reserve0, reserve1, source, block_number, block_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT (pool_id, block_number) DO NOTHING`,
-      [r.poolId, r.chainId, r.reserve0, r.reserve1, r.source, r.blockNumber.toString()]
+      [r.poolId, r.chainId, r.reserve0, r.reserve1, r.source, r.blockNumber.toString(), r.blockHash ?? null]
     );
   }
 
@@ -177,6 +183,12 @@ export class PgDexStore implements DexStore {
       [`%${dedupKey}%`]
     );
     return res.rows.length > 0;
+  }
+
+  async deleteByBlock(chainId: number, blockHash: string): Promise<void> {
+    for (const table of ["liquidity_events", "pool_reserves", "pools"] as const) {
+      await this.pool.query(`DELETE FROM ${table} WHERE chain_id = $1 AND block_hash = $2`, [chainId, blockHash]);
+    }
   }
 
   async insertAlert(destination: string, message: string): Promise<void> {

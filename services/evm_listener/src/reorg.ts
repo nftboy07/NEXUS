@@ -30,7 +30,8 @@ export async function resolveReorg(
   store: EventStore,
   chainId: number,
   confirmations: number,
-  log: Logger
+  log: Logger,
+  onOrphanedBlock?: (block: { number: bigint; hash: string }) => Promise<void>
 ): Promise<ReorgResult> {
   const parentNumber = head.number - 1n;
   if (parentNumber < 0n) return { reorged: false, orphaned: [], beyondConfirmations: false };
@@ -67,6 +68,7 @@ export async function resolveReorg(
     }
     for (const b of stored) {
       const removedCount = await store.markLogsRemoved(chainId, b.hash);
+      if (onOrphanedBlock) await onOrphanedBlock({ number: b.number, hash: b.hash });
       log.warn("marked logs removed for orphaned block", {
         chain_id: chainId,
         block_number: b.number.toString(),

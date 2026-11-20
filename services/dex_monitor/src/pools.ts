@@ -22,6 +22,7 @@ export class PoolRegistry {
       feeTier: created.feeTier,
       createdBlock: ev.block_number === null ? null : BigInt(ev.block_number),
       createdTx: ev.tx_hash,
+      blockHash: ev.block_hash ?? null,
     };
     await this.store.upsertPool(row);
     this.known.add(row.id);

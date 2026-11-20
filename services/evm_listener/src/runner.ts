@@ -123,7 +123,22 @@ export class ChainRunner {
 
   private async handleBlock(block: { number: bigint; hash: string; parentHash: string; timestamp: bigint }) {
     const chain = this.deps.chain;
-    const reorg = await resolveReorg(block, this.source(), this.deps.store, chain.id, chain.confirmations, this.log);
+    const reorg = await resolveReorg(block, this.source(), this.deps.store, chain.id, chain.confirmations, this.log,
+      async (orphaned) => {
+        // Publish block_removed exactly once per orphaned block: the
+        // removed_blocks marker makes replays idempotent.
+        if (await this.deps.store.insertRemovedBlock(chain.id, orphaned.hash)) {
+          await this.deps.publisher.publish({
+            chain_id: chain.id,
+            kind: "block_removed",
+            dedup_key: `${chain.id}:${orphaned.hash}:removed`,
+            block_number: Number(orphaned.number),
+            block_hash: orphaned.hash,
+            tx_hash: null,
+            payload: { block_hash: orphaned.hash, block_number: Number(orphaned.number) },
+          });
+        }
+      });
     if (reorg.reorged && reorg.ancestor !== undefined) {
       // Reprocess the canonical range from the common ancestor forward.
       await backfillRange(this.source(), this.deps.filters, this.ingest(), block.number, {

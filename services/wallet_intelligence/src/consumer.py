@@ -13,7 +13,7 @@ from typing import Callable, Optional, Protocol
 
 from alerts import AlertSink
 from db import WalletStore
-from models import NormalizedEvent
+from models import AlertRecord, NormalizedEvent
 from transfers import decode_transfer, persist_transfer
 from whale import check_transfer
 
@@ -39,6 +39,30 @@ def process_event(
     log: logging.Logger,
 ) -> bool:
     """One event: decode -> persist -> whale check -> commit. False = not a transfer."""
+    if ev.kind == "block_removed":
+        # Reorg propagation: drop derived rows for the orphaned block and
+        # record an invalidation alert referencing what was withdrawn.
+        block_hash = ev.payload.get("block_hash") or ev.block_hash
+        if block_hash:
+            deleted = store.delete_transfers_by_block(ev.chain_id, block_hash)
+            prior = [k for k in store.alert_keys_referencing(block_hash)
+                     if "reorg_invalidation" not in k]
+            if prior:
+                sink.emit(AlertRecord(
+                    kind="reorg_invalidation",
+                    chain_id=ev.chain_id,
+                    title=f"Alerts invalidated by reorg of block {block_hash[:18]}…",
+                    facts={
+                        "invalidated_alerts": prior,
+                        "reason": "source block orphaned by reorg",
+                        "block_hash": block_hash,
+                    },
+                    dedup_key=f"wallet_intelligence:reorg_invalidation:{block_hash}",
+                ))
+            store.commit()
+            log.warning("reorg invalidation applied",
+                        extra={"block_hash": block_hash, "transfers_deleted": deleted})
+        return True
     t = decode_transfer(ev)
     if t is None:
         return False

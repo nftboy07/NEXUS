@@ -45,6 +45,8 @@ export interface EventStore {
   upsertLog(log: StoredLog): Promise<UpsertResult>;
   upsertTransaction(tx: StoredTransaction): Promise<UpsertResult>;
   markLogsRemoved(chainId: number, blockHash: string): Promise<number>;
+  /** Insert a removed-block marker (removed_blocks); false when already present. */
+  insertRemovedBlock(chainId: number, blockHash: string): Promise<boolean>;
   /** Which of `hashes` already have a transactions row on this chain. */
   existingTransactions(chainId: number, hashes: string[]): Promise<Set<string>>;
   getBlockByNumber(chainId: number, number: bigint): Promise<StoredBlock[]>;
@@ -102,6 +104,14 @@ export class PgStore implements EventStore {
       [chainId, blockHash]
     );
     return res.rowCount ?? 0;
+  }
+
+  async insertRemovedBlock(chainId: number, blockHash: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `INSERT INTO removed_blocks (chain_id, block_hash) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [chainId, blockHash]
+    );
+    return (res.rowCount ?? 0) > 0;
   }
 
   async getBlockByNumber(chainId: number, number: bigint): Promise<StoredBlock[]> {

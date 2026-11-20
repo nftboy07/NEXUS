@@ -31,6 +31,7 @@ def decode_transfer(ev: NormalizedEvent) -> Optional[TransferRecord]:
             block_number=ev.block_number or 0,
             log_index=ev.log_index or 0,
             dedup_key=ev.dedup_key,
+            block_hash=ev.block_hash,
         )
     if ev.kind == "log":
         topics = p.get("topics") or []
@@ -46,6 +47,7 @@ def decode_transfer(ev: NormalizedEvent) -> Optional[TransferRecord]:
                 block_number=ev.block_number or 0,
                 log_index=ev.log_index or 0,
                 dedup_key=ev.dedup_key,
+                block_hash=ev.block_hash,
             )
     return None
 

@@ -19,6 +19,7 @@ export async function recordLiquidityEvent(
     amount1: decoded.kind === "Swap" ? decoded.amount1In.toString() : decoded.amount1.toString(),
     txHash: ev.tx_hash ?? "",
     blockNumber: BigInt(ev.block_number ?? 0),
+    blockHash: ev.block_hash ?? null,
   });
 }
 

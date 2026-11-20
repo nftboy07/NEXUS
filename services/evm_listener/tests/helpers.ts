@@ -64,6 +64,13 @@ export class FakeStore implements EventStore {
     }
     return n;
   }
+  removedBlocks = new Set<string>();
+  async insertRemovedBlock(chainId: number, blockHash: string): Promise<boolean> {
+    const k = `${chainId}:${blockHash}`;
+    if (this.removedBlocks.has(k)) return false;
+    this.removedBlocks.add(k);
+    return true;
+  }
   async getBlockByNumber(chainId: number, number: bigint): Promise<StoredBlock[]> {
     return [...this.blocks.values()].filter((b) => b.chainId === chainId && b.number === number);
   }

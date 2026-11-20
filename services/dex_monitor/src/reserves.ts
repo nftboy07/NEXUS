@@ -21,6 +21,7 @@ export async function recordReserveUpdate(
       reserve1: decoded.reserve1.toString(),
       source: "sync",
       blockNumber: BigInt(ev.block_number ?? 0),
+      blockHash: ev.block_hash ?? null,
     });
     return;
   }
@@ -34,6 +35,7 @@ export async function recordReserveUpdate(
       reserve1: null,
       source: "partial",
       blockNumber: BigInt(ev.block_number ?? 0),
+      blockHash: ev.block_hash ?? null,
     });
   }
 }

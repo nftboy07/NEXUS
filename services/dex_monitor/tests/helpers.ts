@@ -107,6 +107,15 @@ export class FakeDexStore implements DexStore {
     const dup = this.reserves.some((x) => x.poolId === r.poolId && x.blockNumber === r.blockNumber);
     if (!dup) this.reserves.push({ ...r });
   }
+  async deleteByBlock(chainId: number, blockHash: string): Promise<void> {
+    this.liquidityEvents = this.liquidityEvents.filter(
+      (e) => !(e.blockHash === blockHash && e.poolId.startsWith(`${chainId}:`))
+    );
+    this.reserves = this.reserves.filter((r) => !(r.blockHash === blockHash && r.chainId === chainId));
+    for (const [id, p] of [...this.pools]) {
+      if (p.blockHash === blockHash && p.chainId === chainId) this.pools.delete(id);
+    }
+  }
   async latestReserve(pid: string): Promise<ReserveRow | null> {
     const rows = this.reserves.filter((r) => r.poolId === pid && r.reserve0 !== null);
     return rows.sort((a, b) => (a.blockNumber < b.blockNumber ? 1 : -1))[0] ?? null;

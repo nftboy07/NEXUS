@@ -52,6 +52,16 @@ export class DexProcessor {
   constructor(private deps: ProcessorDeps) {}
 
   async handleEvent(ev: NexusNormalizedEvent): Promise<void> {
+    if (ev.kind === "block_removed") {
+      // Reorg propagation: drop rows derived from the orphaned block.
+      // Reserves fall back to the latest remaining snapshot; nothing is recomputed.
+      const blockHash = (ev.payload as { block_hash?: string }).block_hash ?? ev.block_hash;
+      if (blockHash) {
+        await this.deps.store.deleteByBlock(ev.chain_id, blockHash);
+        this.deps.log.warn("reorg invalidation applied", { chain_id: ev.chain_id, block_hash: blockHash });
+      }
+      return;
+    }
     if (ev.kind !== "log") return;
     const payload = ev.payload as { contract?: string; removed?: boolean };
     if (!payload.contract || payload.removed) return;

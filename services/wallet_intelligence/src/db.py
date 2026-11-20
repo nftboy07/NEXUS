@@ -16,6 +16,8 @@ class WalletStore(Protocol):
     def all_transfers(self, chain_id: int) -> list[dict]: ...
     def get_watchlists(self, kind: str | None = None) -> list[dict]: ...
     def get_wallet_label(self, address: str) -> tuple[Optional[str], Optional[str]]: ...
+    def delete_transfers_by_block(self, chain_id: int, block_hash: str) -> int: ...
+    def alert_keys_referencing(self, needle: str) -> list[str]: ...
     def failed_tx_count(self, chain_id: int, sender: str) -> Optional[int]: ...
     def known_pool_addresses(self, chain_id: int) -> set[str]: ...
     def has_alert(self, dedup_key: str) -> bool: ...
@@ -33,10 +35,10 @@ class PgWalletStore:
     def insert_transfer(self, t: TransferRecord) -> bool:
         cur = self.conn.execute(
             """INSERT INTO wallet_transfers
-                 (chain_id, token, sender, recipient, amount, tx_hash, block_number, ts)
-               VALUES (%s,%s,%s,%s,%s,%s,%s, now())
+                 (chain_id, token, sender, recipient, amount, tx_hash, block_number, block_hash, ts)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now())
                ON CONFLICT (chain_id, tx_hash, token, sender, recipient, amount) DO NOTHING""",
-            (t.chain_id, t.token, t.sender, t.recipient, t.amount, t.tx_hash, t.block_number),
+            (t.chain_id, t.token, t.sender, t.recipient, t.amount, t.tx_hash, t.block_number, t.block_hash),
         )
         return cur.rowcount > 0
 
@@ -95,6 +97,17 @@ class PgWalletStore:
         except psycopg.Error:
             self.conn.rollback()
             return set()
+
+    def delete_transfers_by_block(self, chain_id: int, block_hash: str) -> int:
+        cur = self.conn.execute(
+            "DELETE FROM wallet_transfers WHERE chain_id = %s AND block_hash = %s",
+            (chain_id, block_hash),
+        )
+        return cur.rowcount
+
+    def alert_keys_referencing(self, needle: str) -> list[str]:
+        cur = self.conn.execute("SELECT message FROM alerts WHERE message LIKE %s", (f"%{needle}%",))
+        return [r[0] for r in cur.fetchall()]
 
     def has_alert(self, dedup_key: str) -> bool:
         cur = self.conn.execute("SELECT 1 FROM alerts WHERE message LIKE %s LIMIT 1", (f"%{dedup_key}%",))

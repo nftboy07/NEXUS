@@ -50,6 +50,15 @@ class FakeStore:
     def get_watchlists(self, kind=None):
         return [w for w in self.watchlists if kind is None or w["kind"] == kind]
 
+    def delete_transfers_by_block(self, chain_id, block_hash):
+        before = len(self.transfers)
+        self.transfers = [t for t in self.transfers
+                          if not (t.chain_id == chain_id and t.block_hash == block_hash)]
+        return before - len(self.transfers)
+
+    def alert_keys_referencing(self, needle):
+        return [m for _, m in self.alerts if needle in m]
+
     def get_wallet_label(self, address):
         w = self.wallets.get(address.lower())
         return (w["label"], w["label_source"]) if w else (None, None)
