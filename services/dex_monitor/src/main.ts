@@ -11,6 +11,23 @@ import { PgDexStore } from "./store.js";
 import { PoolRegistry } from "./pools.js";
 import { DexProcessor, buildFactoryMap, loadDexes } from "./processor.js";
 import { DbStreamAlertSink } from "./alerts.js";
+import { LazyPoolDiscovery, type RpcCaller } from "./discovery.js";
+import { createPublicClient, http } from "viem";
+import { readFileSync } from "node:fs";
+
+const CHAINS_URL = new URL("../../../packages/chain_config/chains.json", import.meta.url);
+
+function loadChainHttpEnv(): Map<number, string> {
+  const { chains } = JSON.parse(readFileSync(CHAINS_URL, "utf8")) as {
+    chains: Array<{ id: number; http_env?: string; planned?: boolean }>;
+  };
+  const m = new Map<number, string>();
+  for (const c of chains) {
+    if (c.planned || !c.http_env) continue;
+    m.set(c.id, c.http_env);
+  }
+  return m;
+}
 
 const log = createLogger("dex_monitor");
 const GROUP = "dex_monitor";
@@ -49,6 +66,25 @@ async function main() {
       else allFactories.set(addr, { ...f, chains: new Set([id]) });
     }
   }
+  // Lazy pool discovery: HTTP RPC probe per chain (chains.json http_env).
+  const chainHttp = loadChainHttpEnv();
+  const clients = new Map<number, ReturnType<typeof createPublicClient>>();
+  const factoriesPerChain = new Map<number, ReturnType<typeof buildFactoryMap>>();
+  for (const id of chainIds) {
+    factoriesPerChain.set(id, buildFactoryMap(dexes, id));
+    const envName = chainHttp.get(id);
+    const url = envName ? process.env[envName] : undefined;
+    if (url) clients.set(id, createPublicClient({ transport: http(url) }));
+    else log.warn("no HTTP RPC configured; lazy discovery disabled for chain", { chain_id: id, env: envName });
+  }
+  const caller: RpcCaller = async (chainId, to, data) => {
+    const client = clients.get(chainId);
+    if (!client) throw new Error(`no RPC client for chain ${chainId}`);
+    const res = await client.call({ to: to as `0x${string}`, data });
+    return (res.data ?? "0x") as `0x${string}`;
+  };
+  const discovery = new LazyPoolDiscovery(caller, factoriesPerChain);
+
   const processor = new DexProcessor({
     store,
     registry,
@@ -56,6 +92,7 @@ async function main() {
     sink,
     removalThresholdPct,
     log,
+    discovery,
   });
 
   let stopped = false;

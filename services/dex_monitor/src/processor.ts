@@ -11,6 +11,7 @@ import { recordLiquidityEvent } from "./liquidity.js";
 import { recordReserveUpdate } from "./reserves.js";
 import { maybeAlertRemoval, type AlertSink } from "./alerts.js";
 import type { DexStore } from "./store.js";
+import type { LazyPoolDiscovery } from "./discovery.js";
 
 const DEXES_URL = new URL("../../../packages/chain_config/dexes.json", import.meta.url);
 
@@ -44,6 +45,8 @@ export interface ProcessorDeps {
   sink: AlertSink;
   removalThresholdPct: number;
   log: Logger;
+  /** Optional lazy pool discovery (RPC probes); absent in tests unless set. */
+  discovery?: LazyPoolDiscovery;
 }
 
 export class DexProcessor {
@@ -67,7 +70,17 @@ export class DexProcessor {
     if (!payload.contract || payload.removed) return;
     const address = payload.contract.toLowerCase();
     const isFactory = this.deps.factories.has(address);
-    const isPool = isFactory ? false : await this.deps.registry.isPool(ev.chain_id, address);
+    let isPool = isFactory ? false : await this.deps.registry.isPool(ev.chain_id, address);
+    if (!isFactory && !isPool && this.deps.discovery) {
+      // Unknown address emitting a pool-shaped event: probe its factory()
+      // over RPC once (negatives are cached so random contracts cost one call).
+      const found = await this.deps.discovery.discover(ev.chain_id, address);
+      if (found) {
+        const row = await this.deps.registry.registerLazy(address, found, ev);
+        this.deps.log.info("pool lazily registered", { pool_id: row.id, dex: row.dex });
+        isPool = true;
+      }
+    }
     if (!isFactory && !isPool) return;
 
     const ctx: DecodeContext = {

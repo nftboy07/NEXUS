@@ -14,6 +14,8 @@ export interface PoolRow {
   createdTx: string | null;
   /** Block hash of the PoolCreated event; set by migration 007 consumers. */
   blockHash?: string | null;
+  /** 'pool_created' (seen PoolCreated event) or 'lazy' (RPC-probed). */
+  discovery?: string;
 }
 
 export interface LiquidityEventRow {
@@ -68,10 +70,10 @@ export class PgDexStore implements DexStore {
 
   async upsertPool(p: PoolRow): Promise<void> {
     await this.pool.query(
-      `INSERT INTO pools (id, dex, token0, token1, chain_id, fee_tier, created_block, created_tx, block_hash)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      `INSERT INTO pools (id, dex, token0, token1, chain_id, fee_tier, created_block, created_tx, block_hash, discovery)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        ON CONFLICT (id) DO NOTHING`,
-      [p.id, p.dex, p.token0, p.token1, p.chainId, p.feeTier, p.createdBlock?.toString() ?? null, p.createdTx, p.blockHash ?? null]
+      [p.id, p.dex, p.token0, p.token1, p.chainId, p.feeTier, p.createdBlock?.toString() ?? null, p.createdTx, p.blockHash ?? null, p.discovery ?? "pool_created"]
     );
   }
 

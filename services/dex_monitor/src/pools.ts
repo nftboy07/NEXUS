@@ -5,6 +5,7 @@ import type { DexStore, PoolRow } from "./store.js";
 import { poolId } from "./store.js";
 import type { NexusNormalizedEvent } from "@nexus/event-schemas";
 import type { DexEvent } from "./decoders.js";
+import type { DiscoveredPool } from "./discovery.js";
 
 export class PoolRegistry {
   private known = new Set<string>(); // poolId values
@@ -39,6 +40,25 @@ export class PoolRegistry {
       return true;
     }
     return false;
+  }
+
+  /** Register a pool found via lazy RPC discovery (no PoolCreated seen). */
+  async registerLazy(address: string, info: DiscoveredPool, ev: NexusNormalizedEvent): Promise<PoolRow> {
+    const row: PoolRow = {
+      id: poolId(ev.chain_id, address),
+      dex: info.dex,
+      token0: info.token0,
+      token1: info.token1,
+      chainId: ev.chain_id,
+      feeTier: info.feeTier,
+      createdBlock: null,
+      createdTx: null,
+      blockHash: null,
+      discovery: info.discovery,
+    };
+    await this.store.upsertPool(row);
+    this.known.add(row.id);
+    return row;
   }
 
   markKnown(chainId: number, address: string): void {
