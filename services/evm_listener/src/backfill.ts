@@ -1,11 +1,11 @@
 // HTTP backfill: on startup and after any reconnect, fill (checkpoint, head]
 // with eth_getLogs + block fetches in bounded chunks, then resume live subs.
 
-import type { Logger } from "@nexus/shared-utils";
+import { retry, type Logger } from "@nexus/shared-utils";
 import type { ChainSource, SourceLog } from "./rpc.js";
 import type { ParsedLogFilter } from "./subscriptions.js";
 import { advanceCheckpoint, readCheckpoint } from "./checkpoint.js";
-import { ingestBlock, ingestLogs, type IngestDeps } from "./ingest.js";
+import { ingestBlock, ingestLogs, ingestTransactions, type IngestDeps } from "./ingest.js";
 
 export interface BackfillOptions {
   chunkSize?: number; // max blocks per eth_getLogs call, default 2000
@@ -31,11 +31,76 @@ export function planChunks(fromExclusive: bigint, to: bigint, chunkSize: number)
   return chunks;
 }
 
-async function fetchChunkLogs(source: ChainSource, filters: ParsedLogFilter[], from: bigint, to: bigint): Promise<SourceLog[]> {
+/** Provider responses that mean "your block range / result set is too big". */
+const RANGE_LIMIT_RE =
+  /more than \d+ results|range too large|too many results|limit exceeded|exceeds? (the )?max|block range|response size|query timeout/i;
+
+export function isRangeLimitError(err: unknown): boolean {
+  return RANGE_LIMIT_RE.test(String(err instanceof Error ? err.message : err));
+}
+
+const RPC_RETRY = { baseMs: 250, capMs: 2_000, maxAttempts: 3, jitter: 0.2 };
+
+/**
+ * Fetch logs for ONE filter (address + topics) over [from, to].
+ * Transient errors are retried with the shared bounded backoff; provider
+ * range/result-limit errors halve the range recursively down to 1 block.
+ */
+export async function fetchFilterLogs(
+  source: ChainSource,
+  filter: ParsedLogFilter,
+  from: bigint,
+  to: bigint,
+  log?: Logger
+): Promise<SourceLog[]> {
+  const call = () =>
+    source.getLogs({ topics: filter.topics, address: filter.address, fromBlock: from, toBlock: to });
+  try {
+    return await call();
+  } catch (err) {
+    if (isRangeLimitError(err) && from < to) {
+      const mid = from + (to - from) / 2n;
+      log?.warn("log range too large, splitting", {
+        filter: filter.name,
+        from: from.toString(),
+        to: to.toString(),
+      });
+      const [lo, hi] = await Promise.all([
+        fetchFilterLogs(source, filter, from, mid, log),
+        fetchFilterLogs(source, filter, mid + 1n, to, log),
+      ]);
+      return [...lo, ...hi];
+    }
+    // Transient/non-limit error: bounded retry of the same window, then re-check
+    // in case the provider reports the limit only under retry pressure.
+    try {
+      return await retry(call, RPC_RETRY);
+    } catch (retryErr) {
+      if (isRangeLimitError(retryErr) && from < to) {
+        const mid = from + (to - from) / 2n;
+        const [lo, hi] = await Promise.all([
+          fetchFilterLogs(source, filter, from, mid, log),
+          fetchFilterLogs(source, filter, mid + 1n, to, log),
+        ]);
+        return [...lo, ...hi];
+      }
+      throw retryErr;
+    }
+  }
+}
+
+/** Shared per-filter fetch used by backfill and per-block reconciliation:
+ * one request per filter (own address + topics), results merged and sorted. */
+export async function fetchLogs(
+  source: ChainSource,
+  filters: ParsedLogFilter[],
+  from: bigint,
+  to: bigint,
+  log?: Logger
+): Promise<SourceLog[]> {
   const out: SourceLog[] = [];
   for (const f of filters) {
-    const logs = await source.getLogs({ topics: f.topics, fromBlock: from, toBlock: to });
-    out.push(...logs);
+    out.push(...(await fetchFilterLogs(source, f, from, to, log)));
   }
   out.sort((a, b) => {
     if (a.blockNumber !== b.blockNumber) return a.blockNumber < b.blockNumber ? -1 : 1;
@@ -73,10 +138,11 @@ export async function backfillRange(
   });
 
   for (const [start, end] of chunks) {
-    const logs = await fetchChunkLogs(source, filters, start, end);
+    const logs = await fetchLogs(source, filters, start, end, deps.log);
     const stats = await ingestLogs(logs, deps);
     result.logsInserted += stats.inserted;
     result.logsDuplicate += stats.duplicates;
+    await ingestTransactions(logs, source, deps);
 
     for (let n = start; n <= end; n++) {
       const block = await source.getBlock(n);

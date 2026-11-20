@@ -2,10 +2,10 @@
 // Idempotent by construction — a redelivered log is a store-level duplicate and
 // is never published a second time.
 
-import type { Logger } from "@nexus/shared-utils";
+import { retry, type Logger } from "@nexus/shared-utils";
 import type { EventStore } from "./store.js";
 import type { EventPublisher } from "./publisher.js";
-import type { SourceBlock, SourceLog } from "./rpc.js";
+import type { ChainSource, SourceBlock, SourceLog } from "./rpc.js";
 import { normalizeBlock, normalizeLog } from "./normalize.js";
 
 export interface IngestDeps {
@@ -61,6 +61,48 @@ export async function ingestBlock(block: SourceBlock, deps: IngestDeps): Promise
     await deps.publisher.publish(normalizeBlock(block, deps.chainId));
   }
   return result;
+}
+
+const RPC_RETRY = { baseMs: 250, capMs: 2_000, maxAttempts: 3, jitter: 0.2 };
+
+/**
+ * Populate the `transactions` table for the tx hashes carried by a log batch.
+ * One HTTP fetch per unique tx hash, behind the shared bounded retry; the
+ * upsert itself is idempotent across redeliveries. Call BEFORE advancing the
+ * checkpoint so a restart re-attempts any tx we failed to fetch.
+ */
+export async function ingestTransactions(
+  logs: SourceLog[],
+  source: ChainSource,
+  deps: IngestDeps
+): Promise<number> {
+  const unique = [...new Set(logs.map((l) => l.transactionHash))].filter(Boolean);
+  let stored = 0;
+  for (const hash of unique) {
+    try {
+      const [tx, receipt] = await Promise.all([
+        retry(() => source.getTransaction(hash), RPC_RETRY),
+        retry(() => source.getTransactionReceipt(hash), RPC_RETRY),
+      ]);
+      await deps.store.upsertTransaction({
+        chainId: deps.chainId,
+        hash,
+        sender: tx.from,
+        recipient: tx.to,
+        value: tx.value.toString(),
+        status: receipt.status,
+        blockNumber: receipt.blockNumber,
+      });
+      stored++;
+    } catch (err) {
+      deps.log.warn("transaction fetch failed; left for next backfill", {
+        chain_id: deps.chainId,
+        tx_hash: hash,
+        err: String(err),
+      });
+    }
+  }
+  return stored;
 }
 
 export type UpsertOutcome = "inserted" | "duplicate";

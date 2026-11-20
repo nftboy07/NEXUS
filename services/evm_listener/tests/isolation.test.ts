@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createLogger } from "@nexus/shared-utils";
 import { runChains } from "../src/runner.js";
 import type { ParsedLogFilter } from "../src/subscriptions.js";
-import { FakePublisher, FakeStore, FakeSource } from "./helpers.js";
+import { fakeClients, FakePublisher, FakeStore, FakeSource, makeBlocks } from "./helpers.js";
 import type { ChainSource } from "../src/rpc.js";
 import type { ChainConfig } from "../src/config.js";
 
@@ -15,44 +15,15 @@ function fakeChain(id: number, name: string): ChainConfig {
   return { id, name, confirmations: 12, wssEnv: "X", httpEnv: "Y", wssUrl: "ws://x", httpUrl: "http://x" };
 }
 
-function fakeClients(source: ChainSource, failSubscribe = false) {
-  const ws = {
-    watchBlocks: () => {
-      if (failSubscribe) throw new Error("ws subscribe failed");
-      return () => {};
-    },
-    watchEvent: () => {
-      if (failSubscribe) throw new Error("ws subscribe failed");
-      return () => {};
-    },
-  };
-  // ChainRunner uses viemChainSource(http) — inject the fake by monkey-patching
-  // is not needed: runChains only calls source() which wraps clients.http.
-  // For the isolation test we only need start() to succeed/fail, so provide an
-  // http client exposing the minimal surface via a cast.
-  const http = {
-    getBlockNumber: () => source.getBlockNumber(),
-    getBlock: ({ blockNumber }: { blockNumber: bigint }) => {
-      return source.getBlock(blockNumber);
-    },
-    getLogs: ({ fromBlock, toBlock }: { fromBlock: bigint; toBlock: bigint }) =>
-      source.getLogs({ topics: [], fromBlock, toBlock }),
-  };
-  const clients = { role: "primary" as const, ws: ws as never, http: http as never };
-  return { primary: clients };
-}
-
-const chainB_blocks = [
-  { number: 100n, hash: "0x" + "a".repeat(64), parentHash: "0x" + "0".repeat(64), timestamp: 1n },
-];
-
 describe("per-chain isolation", () => {
   it("one chain failing at start does not stop the other", async () => {
-    const goodSource = FakeSource.fromFixture(chainB_blocks, [], 100n);
+    const goodSource = FakeSource.fromFixture(makeBlocks(100n, 100n), [], 100n);
     const failingSource: ChainSource = {
       getBlockNumber: () => Promise.reject(new Error("endpoint dead")),
       getBlock: () => Promise.reject(new Error("endpoint dead")),
       getLogs: () => Promise.reject(new Error("endpoint dead")),
+      getTransaction: () => Promise.reject(new Error("endpoint dead")),
+      getTransactionReceipt: () => Promise.reject(new Error("endpoint dead")),
     };
     const store = new FakeStore();
     await store.setCheckpoint(8453, 99n, null);

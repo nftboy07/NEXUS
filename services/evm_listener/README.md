@@ -15,7 +15,7 @@ normalized events published to the Redis stream `nexus:events`.
 | Subscriptions | `src/subscriptions.ts` | `watchBlocks` + `watchEvent` from `packages/chain_config/log_filters.json` (never hardcoded). Heartbeat timestamps per subscription. |
 | Storage | `src/store.ts` | `blocks`, `logs`, `transactions` — `ON CONFLICT DO NOTHING` on the `001_init.sql` PKs. `markLogsRemoved(chainId, blockHash)` for reorgs. `EventStore` interface → `PgStore` in prod, fake in tests. |
 | Checkpoints | `src/checkpoint.ts` | `checkpoints` table per chain; advances only after a block's events are stored AND published; `rewindCheckpoint` for reorgs. |
-| Backfill | `src/backfill.ts` | `eth_getLogs` + block fetches for `(checkpoint, head]` in bounded chunks (`BACKFILL_CHUNK_SIZE`, default 2000); dedup via store upserts. Runs at startup and after every reconnect. |
+| Backfill | `src/backfill.ts` | `eth_getLogs` + block fetches for `(checkpoint, head]` in bounded chunks (`BACKFILL_CHUNK_SIZE`, default 2000); dedup via store upserts. Runs at startup and after every reconnect. Provider range/result-limit errors halve the window recursively to 1 block; other transient RPC errors use bounded retry. One request per filter with its own address+topics. Cold start seeds the checkpoint at `head - START_BACKFILL_BLOCKS` (default 50) or the chain's `start_block` in `chains.json`. |
 | Failover | `src/failover.ts` | Bounded backoff reconnect → secondary provider → backfill → resubscribe; outages recorded in `provider_health`. |
 | Reorgs | `src/reorg.ts` | Parent-hash verification per new head within the chain's `confirmations` depth; walks back to the common ancestor, marks orphaned logs `removed = TRUE`, rewinds the checkpoint, backfill reprocesses the canonical range. |
 | Publisher | `src/publisher.ts` | `XADD` each `NexusNormalizedEvent` to `nexus:events`. |
@@ -32,9 +32,14 @@ restart never silently skips events.
 ```bash
 cp ../../.env.example ../../.env   # set WSS_RPC_URL / HTTP_RPC_URL (+ _BASE for Base)
 docker compose up -d postgres redis
-psql "$DATABASE_URL" -f ../../migrations/001_init.sql
 npm install                        # from repo root (npm workspaces)
 ```
+
+`docker-compose.yml` mounts `./migrations` into the postgres container at
+`/docker-entrypoint-initdb.d` (read-only), so `001_init.sql` runs
+automatically on first init of a fresh `nexus_pg` volume. If the volume
+already exists, apply it once manually:
+`psql "$DATABASE_URL" -f migrations/001_init.sql`.
 
 ## Run
 

@@ -49,10 +49,29 @@ export interface SourceLog {
   removed?: boolean;
 }
 
+export interface SourceTransaction {
+  hash: string;
+  from: string;
+  to: string | null;
+  value: bigint;
+}
+
+export interface SourceReceipt {
+  status: "success" | "reverted";
+  blockNumber: bigint;
+}
+
 export interface ChainSource {
   getBlockNumber(): Promise<bigint>;
   getBlock(n: bigint): Promise<SourceBlock>;
-  getLogs(args: { topics: string[][]; fromBlock: bigint; toBlock: bigint }): Promise<SourceLog[]>;
+  getLogs(args: {
+    topics: string[][];
+    address?: string | string[];
+    fromBlock: bigint;
+    toBlock: bigint;
+  }): Promise<SourceLog[]>;
+  getTransaction(hash: string): Promise<SourceTransaction>;
+  getTransactionReceipt(hash: string): Promise<SourceReceipt>;
 }
 
 export function viemChainSource(client: PublicClient): ChainSource {
@@ -67,8 +86,8 @@ export function viemChainSource(client: PublicClient): ChainSource {
         timestamp: b.timestamp,
       };
     },
-    getLogs: async ({ topics, fromBlock, toBlock }) => {
-      const logs = await client.getLogs({ fromBlock, toBlock, topics } as never);
+    getLogs: async ({ topics, address, fromBlock, toBlock }) => {
+      const logs = await client.getLogs({ fromBlock, toBlock, topics, address } as never);
       return logs.map((l) => ({
         address: l.address,
         blockHash: l.blockHash ?? "",
@@ -80,6 +99,14 @@ export function viemChainSource(client: PublicClient): ChainSource {
         transactionIndex: l.transactionIndex,
         removed: l.removed ?? false,
       }));
+    },
+    getTransaction: async (hash) => {
+      const tx = await client.getTransaction({ hash: hash as `0x${string}` });
+      return { hash: tx.hash, from: tx.from, to: tx.to, value: tx.value };
+    },
+    getTransactionReceipt: async (hash) => {
+      const r = await client.getTransactionReceipt({ hash: hash as `0x${string}` });
+      return { status: r.status, blockNumber: r.blockNumber };
     },
   };
 }

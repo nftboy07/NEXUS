@@ -12,6 +12,7 @@ export interface RawChainEntry {
   wss_env?: string;
   http_env?: string;
   planned?: boolean;
+  start_block?: number;
 }
 
 export interface ChainConfig {
@@ -24,6 +25,8 @@ export interface ChainConfig {
   httpUrl: string;
   wssUrlSecondary?: string;
   httpUrlSecondary?: string;
+  /** Optional per-chain cold-start block from chains.json (`start_block`). */
+  startBlock?: bigint;
 }
 
 const CHAINS_JSON_URL = new URL("../../../packages/chain_config/chains.json", import.meta.url);
@@ -62,6 +65,7 @@ export function loadChainConfigs(
       httpUrl,
       wssUrlSecondary: env[`${c.wss_env}_SECONDARY`],
       httpUrlSecondary: env[`${c.http_env}_SECONDARY`],
+      startBlock: c.start_block !== undefined ? BigInt(c.start_block) : undefined,
     });
   }
 

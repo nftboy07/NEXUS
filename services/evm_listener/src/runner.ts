@@ -10,10 +10,10 @@ import type { EventStore } from "./store.js";
 import type { EventPublisher } from "./publisher.js";
 import type { ParsedLogFilter } from "./subscriptions.js";
 import { heartbeatStaleMs, watchBlocks, watchLogs, type Subscription } from "./subscriptions.js";
-import { backfillRange } from "./backfill.js";
+import { backfillRange, fetchLogs } from "./backfill.js";
 import { resolveReorg } from "./reorg.js";
 import { advanceCheckpoint, readCheckpoint } from "./checkpoint.js";
-import { ingestBlock, ingestLogs } from "./ingest.js";
+import { ingestBlock, ingestLogs, ingestTransactions } from "./ingest.js";
 import { HealthReporter } from "./health.js";
 import { recoverProvider, type ProviderState } from "./failover.js";
 
@@ -27,6 +27,8 @@ export interface RunnerDeps {
   heartbeatTimeoutMs?: number;
   healthIntervalMs?: number;
   chunkSize?: number;
+  /** Cold-start depth when no checkpoint row exists (START_BACKFILL_BLOCKS, default 50). */
+  startBackfillBlocks?: number;
 }
 
 const DEFAULT_HEARTBEAT_MS = 60_000;
@@ -71,6 +73,15 @@ export class ChainRunner {
 
   async start(): Promise<void> {
     const head = await this.source().getBlockNumber();
+    // Cold start: no checkpoint row -> seed at head - START_BACKFILL_BLOCKS
+    // (or the chain's chains.json `start_block`) so we never scan from genesis.
+    const existing = await this.deps.store.getCheckpoint(this.deps.chain.id);
+    if (existing === null) {
+      const depth = this.deps.startBackfillBlocks ?? 50;
+      const seed = this.deps.chain.startBlock ?? (head - BigInt(depth) > 0n ? head - BigInt(depth) : 0n);
+      await this.deps.store.setCheckpoint(this.deps.chain.id, seed, null);
+      this.log.info("cold start: checkpoint seeded", { head: head.toString(), seed: seed.toString() });
+    }
     const cp = await readCheckpoint(this.deps.store, this.deps.chain.id);
     if (head > cp.lastBlock) {
       await backfillRange(this.source(), this.deps.filters, this.ingest(), head, {
@@ -112,22 +123,34 @@ export class ChainRunner {
       });
       return;
     }
+    // Gap guard: watchBlocks can jump heads (e.g. 100 -> 103). If the head
+    // is more than one block past the checkpoint, backfill the missing range
+    // instead of single-block processing.
+    const cp = await readCheckpoint(this.deps.store, chain.id);
+    if (block.number > cp.lastBlock + 1n) {
+      this.log.info("head gap detected, backfilling", {
+        checkpoint: cp.lastBlock.toString(),
+        head: block.number.toString(),
+      });
+      await backfillRange(this.source(), this.deps.filters, this.ingest(), block.number, {
+        chunkSize: this.deps.chunkSize,
+      });
+      return;
+    }
     await ingestBlock(block, this.ingest());
     // Reconcile this block's logs via HTTP — dedup makes it free when the
     // live subscription already delivered them. Checkpoint only advances
     // after the block's events are stored AND published.
-    const logs = await this.source().getLogs({
-      topics: this.deps.filters.flatMap((f) => f.topics),
-      fromBlock: block.number,
-      toBlock: block.number,
-    });
+    const logs = await fetchLogs(this.source(), this.deps.filters, block.number, block.number, this.log);
     await ingestLogs(logs, this.ingest());
+    await ingestTransactions(logs, this.source(), this.ingest());
     await advanceCheckpoint(this.deps.store, chain.id, block.number, null);
     this.log.debug("block processed", { block: block.number.toString(), lag: 0 });
   }
 
   private async handleLogs(logs: Parameters<typeof ingestLogs>[0]): Promise<void> {
     await ingestLogs(logs, this.ingest());
+    await ingestTransactions(logs, this.source(), this.ingest());
   }
 
   private startHeartbeatWatch(): void {
@@ -167,6 +190,11 @@ export class ChainRunner {
     const head = await this.source().getBlockNumber();
     await backfillRange(this.source(), this.deps.filters, this.ingest(), head, { chunkSize: this.deps.chunkSize });
     this.subscribe();
+  }
+
+  /** Test hook: resolves when all enqueued block/log work has drained. */
+  async drain(): Promise<void> {
+    await this.processing;
   }
 
   async stop(): Promise<void> {
