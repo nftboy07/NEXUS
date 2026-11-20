@@ -15,7 +15,8 @@ normalized events published to the Redis stream `nexus:events`.
 | Subscriptions | `src/subscriptions.ts` | `watchBlocks` + `watchEvent` from `packages/chain_config/log_filters.json` (never hardcoded). Heartbeat timestamps per subscription. |
 | Storage | `src/store.ts` | `blocks`, `logs`, `transactions` — `ON CONFLICT DO NOTHING` on the `001_init.sql` PKs. `markLogsRemoved(chainId, blockHash)` for reorgs. `EventStore` interface → `PgStore` in prod, fake in tests. |
 | Checkpoints | `src/checkpoint.ts` | `checkpoints` table per chain; advances only after a block's events are stored AND published; `rewindCheckpoint` for reorgs. |
-| Backfill | `src/backfill.ts` | `eth_getLogs` + block fetches for `(checkpoint, head]` in bounded chunks (`BACKFILL_CHUNK_SIZE`, default 2000); dedup via store upserts. Runs at startup and after every reconnect. Provider range/result-limit errors halve the window recursively to 1 block; other transient RPC errors use bounded retry. One request per filter with its own address+topics. Cold start seeds the checkpoint at `head - START_BACKFILL_BLOCKS` (default 50) or the chain's `start_block` in `chains.json`. |
+| Backfill | `src/backfill.ts` | `eth_getLogs` + block fetches for `(checkpoint, head]` in bounded chunks (`BACKFILL_CHUNK_SIZE`, default 2000); dedup via store upserts. Runs at startup and after every reconnect. Provider range/result-limit errors halve the window recursively to 1 block; rate-limit responses are never treated as range errors; other transient RPC errors use bounded retry. One request per filter with its own address+topics, issued concurrently. Pipelined: up to `BACKFILL_BLOCK_CONCURRENCY` (default 8) blocks are prepared ahead (header + tx/receipt fetches, no writes), then committed strictly in order — logs batch-inserted + published, txs batch-upserted, block stored + published, **then** checkpoint = n. All RPCs of one chain's backfill share an `RPC_MAX_CONCURRENCY` (default 8) budget. Cold start seeds the checkpoint at `head - START_BACKFILL_BLOCKS` (default 50) or the chain's `start_block` in `chains.json`. |
+| Tx enrichment | `src/ingest.ts` | `TX_ENRICH_MODE=auto` (default): a block with >= `BLOCK_ENRICH_THRESHOLD` (default 4) missing tx rows is enriched with one full-tx `eth_getBlockByNumber` + one `eth_getBlockReceipts` instead of 2 calls per tx; fewer uses per-tx calls (`TX_FETCH_CONCURRENCY`, default 8). `block`/`tx` force a mode. Missing `eth_getBlockReceipts` support falls back to per-tx receipts. |
 | Failover | `src/failover.ts` | Bounded backoff reconnect → secondary provider → backfill → resubscribe; outages recorded in `provider_health`. |
 | Reorgs | `src/reorg.ts` | Parent-hash verification per new head within the chain's `confirmations` depth; walks back to the common ancestor, marks orphaned logs `removed = TRUE`, rewinds the checkpoint, backfill reprocesses the canonical range. |
 | Publisher | `src/publisher.ts` | `XADD` each `NexusNormalizedEvent` to `nexus:events`. |
@@ -26,6 +27,17 @@ New-head flow: live log subscription ingests immediately; each new head then
 reconciles that block's logs over HTTP (dedup makes it a no-op when the
 subscription already delivered) and only then advances the checkpoint — so a
 restart never silently skips events.
+
+## Backfill throughput benchmark
+
+`scripts/bench_backfill.ts` replays a fixed block range against the configured
+public RPC into a **scratch** database (it deletes that chain's rows first) and
+prints blocks/s, row counts and per-method RPC call counts/latency:
+
+```bash
+DATABASE_URL=postgresql://nexus:nexus@localhost:5432/nexus_bench REDIS_URL=redis://localhost:6379 \
+  npx tsx scripts/bench_backfill.ts --chain 8453 --blocks 300 --to 59928800
+```
 
 ## Setup
 

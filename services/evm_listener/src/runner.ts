@@ -10,11 +10,11 @@ import type { EventStore } from "./store.js";
 import type { EventPublisher } from "./publisher.js";
 import type { ParsedLogFilter } from "./subscriptions.js";
 import { heartbeatStaleMs, watchBlocks, watchLogs, type Subscription } from "./subscriptions.js";
-import { backfillRange, fetchLogs } from "./backfill.js";
+import { backfillRange, fetchLogs, type BackfillOptions } from "./backfill.js";
 import { resolveReorg } from "./reorg.js";
 import { filterFingerprint } from "./scopedFilters.js";
 import { advanceCheckpoint, readCheckpoint } from "./checkpoint.js";
-import { ingestBlock, ingestLogs, ingestTransactions } from "./ingest.js";
+import { ingestBlock, ingestLogs, ingestTransactions, type TxEnrichMode } from "./ingest.js";
 import { HealthReporter } from "./health.js";
 import { recoverProvider, type ProviderState } from "./failover.js";
 
@@ -28,11 +28,16 @@ export interface RunnerDeps {
   heartbeatTimeoutMs?: number;
   healthIntervalMs?: number;
   chunkSize?: number;
+  /** Backfill pipeline knobs (BACKFILL_BLOCK_CONCURRENCY, RPC_MAX_CONCURRENCY). */
+  blockConcurrency?: number;
+  rpcConcurrency?: number;
   /** Cold-start depth when no checkpoint row exists (START_BACKFILL_BLOCKS, default 50). */
   startBackfillBlocks?: number;
   /** Fetch tx+receipt rows for log tx hashes (INGEST_TRANSACTIONS, default true). */
   ingestTransactions?: boolean;
   txFetchConcurrency?: number;
+  txEnrichMode?: TxEnrichMode;
+  blockEnrichThreshold?: number;
   /** Scoped-filter refresh: rebuild filters from watchlists/pools every
    * intervalSeconds; resubscribes + backfills from checkpoint on change.
    * Absent = static filters (LOG_FILTER_MODE=full behaviour). */
@@ -78,6 +83,16 @@ export class ChainRunner {
       log: this.log,
       ingestTransactions: this.deps.ingestTransactions,
       txFetchConcurrency: this.deps.txFetchConcurrency,
+      txEnrichMode: this.deps.txEnrichMode,
+      blockEnrichThreshold: this.deps.blockEnrichThreshold,
+    };
+  }
+
+  private backfillOpts(): BackfillOptions {
+    return {
+      chunkSize: this.deps.chunkSize,
+      blockConcurrency: this.deps.blockConcurrency,
+      rpcConcurrency: this.deps.rpcConcurrency,
     };
   }
 
@@ -105,9 +120,7 @@ export class ChainRunner {
     }
     const cp = await readCheckpoint(this.deps.store, this.deps.chain.id);
     if (head > cp.lastBlock) {
-      await backfillRange(this.source(), this.activeFilters, this.ingest(), head, {
-        chunkSize: this.deps.chunkSize,
-      });
+      await backfillRange(this.source(), this.activeFilters, this.ingest(), head, this.backfillOpts());
     }
     this.subscribe();
     this.health.start();
@@ -155,9 +168,7 @@ export class ChainRunner {
       });
     if (reorg.reorged && reorg.ancestor !== undefined) {
       // Reprocess the canonical range from the common ancestor forward.
-      await backfillRange(this.source(), this.activeFilters, this.ingest(), block.number, {
-        chunkSize: this.deps.chunkSize,
-      });
+      await backfillRange(this.source(), this.activeFilters, this.ingest(), block.number, this.backfillOpts());
       return;
     }
     // Gap guard: watchBlocks can jump heads (e.g. 100 -> 103). If the head
@@ -169,9 +180,7 @@ export class ChainRunner {
         checkpoint: cp.lastBlock.toString(),
         head: block.number.toString(),
       });
-      await backfillRange(this.source(), this.activeFilters, this.ingest(), block.number, {
-        chunkSize: this.deps.chunkSize,
-      });
+      await backfillRange(this.source(), this.activeFilters, this.ingest(), block.number, this.backfillOpts());
       return;
     }
     await ingestBlock(block, this.ingest());
@@ -225,7 +234,7 @@ export class ChainRunner {
     this.health.counters.reconnects = next.reconnects;
     // Never assume reconnecting recovers missed events: backfill from checkpoint.
     const head = await this.source().getBlockNumber();
-    await backfillRange(this.source(), this.activeFilters, this.ingest(), head, { chunkSize: this.deps.chunkSize });
+    await backfillRange(this.source(), this.activeFilters, this.ingest(), head, this.backfillOpts());
     this.subscribe();
   }
 
@@ -247,9 +256,7 @@ export class ChainRunner {
           this.activeFilters = next;
           this.subscribe();
           const head = await this.source().getBlockNumber();
-          await backfillRange(this.source(), this.activeFilters, this.ingest(), head, {
-            chunkSize: this.deps.chunkSize,
-          });
+          await backfillRange(this.source(), this.activeFilters, this.ingest(), head, this.backfillOpts());
         } catch (err) {
           this.log.error("filter refresh failed", { err: String(err) });
         }

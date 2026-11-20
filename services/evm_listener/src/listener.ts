@@ -6,7 +6,7 @@ import "dotenv/config";
 import pg from "pg";
 import { createClient } from "redis";
 import { createLogger } from "@nexus/shared-utils";
-import { loadChainConfigs } from "./config.js";
+import { backfillOptionsFromEnv, ingestOptionsFromEnv, loadChainConfigs } from "./config.js";
 import { createChainClients } from "./rpc.js";
 import { readFileSync } from "node:fs";
 import { loadLogFilters, parseLogFilters } from "./subscriptions.js";
@@ -33,6 +33,10 @@ async function main() {
   const maxFilterAddresses = Number(process.env.MAX_FILTER_ADDRESSES ?? 10);
   const filterRefreshSeconds = Number(process.env.FILTER_REFRESH_SECONDS ?? 60);
 
+  const backfillOpts = backfillOptionsFromEnv();
+  const ingestOpts = ingestOptionsFromEnv();
+  log.info("backfill pipeline", { ...backfillOpts, ...ingestOpts });
+
   const databaseUrl = process.env.DATABASE_URL;
   const redisUrl = process.env.REDIS_URL;
   if (!databaseUrl) throw new Error("Missing DATABASE_URL");
@@ -54,10 +58,9 @@ async function main() {
       publisher,
       log,
       clients: createChainClients(chain),
-      chunkSize: Number(process.env.BACKFILL_CHUNK_SIZE ?? 2000),
+      ...backfillOpts,
+      ...ingestOpts,
       startBackfillBlocks: Number(process.env.START_BACKFILL_BLOCKS ?? 50),
-      ingestTransactions: (process.env.INGEST_TRANSACTIONS ?? "true") !== "false",
-      txFetchConcurrency: Number(process.env.TX_FETCH_CONCURRENCY ?? 8),
       heartbeatTimeoutMs: Number(process.env.HEARTBEAT_TIMEOUT_MS ?? 60_000),
       filterRefresh: filterMode === "scoped"
         ? {
