@@ -41,7 +41,7 @@ npm test           # vitest component/unit tests
 `migrations/*.sql` apply in numeric order via the postgres
 `docker-entrypoint-initdb.d` mount on a **fresh volume only**; apply
 manually with `psql -f` on existing volumes. All migrations must be
-idempotent. Next free number: **011**.
+idempotent. Next free number: **013**.
 
 ## Rails
 

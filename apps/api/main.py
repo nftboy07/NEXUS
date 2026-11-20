@@ -291,14 +291,13 @@ class InvestigationIn(BaseModel):
 
 @app.post("/investigations", dependencies=[Depends(require_key)], status_code=201)
 def create_investigation(body: InvestigationIn):
-    """Queue an investigation for Engine 6's CLI/worker. When no LLM is
-    configured the row lands as 'awaiting_model' (package-only mode) —
-    a report is never fabricated here."""
+    """Queue an investigation for Engine 6's worker. The worker builds the
+    evidence package; with no model configured the row then lands as
+    'awaiting_model' (package-only mode) — a report is never fabricated here."""
     if not body.tx_hash and not body.address:
         raise HTTPException(422, "tx_hash or address required")
     conn = get_conn()
-    llm_ready = bool(os.getenv("LLM_API_KEY") and os.getenv("LLM_MODEL"))
-    status = "queued" if llm_ready else "awaiting_model"
+    status = "queued"
     trigger = f"chain:{body.chain_id}:tx:{body.tx_hash}" if body.tx_hash \
         else f"chain:{body.chain_id}:address:{body.address.lower()}"
     conn.execute(

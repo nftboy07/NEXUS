@@ -2,7 +2,8 @@
 
 The only NEXUS service that may call an LLM — and never in the critical
 path: every other engine keeps working when this service or the provider
-is down. Manual CLI trigger only in the MVP.
+is down. Triggers: manual CLI, `POST /investigations`, and (worker mode)
+automatic enqueue from Stage A alerts.
 
 ## How it works
 
@@ -27,6 +28,32 @@ is down. Manual CLI trigger only in the MVP.
 5. `cost.py` records token usage; `cost_estimate` only when
    `LLM_PRICE_INPUT_PER_MTOK`/`LLM_PRICE_OUTPUT_PER_MTOK` are set — else
    NULL, never invented.
+
+## Triggers
+
+- **Stage A alerts (worker, default on):** each loop the worker enqueues
+  one `queued` investigation per new alert tx (`facts.tx_hash`, or
+  `facts.evidence[0].tx_hash` for MEV) from `whale_transfer`,
+  `liquidity_removal`, and the MEV kinds. Idempotent: one auto
+  investigation per `(chain_id, tx)` (migration 012 unique index), txs
+  already investigated are skipped, `source_alert_id` links back to the
+  alert. Bounded by `INVESTIGATOR_AUTO_BATCH` (10/loop) and
+  `INVESTIGATOR_AUTO_MAX_PER_HOUR` (20). Disable with
+  `INVESTIGATOR_AUTO_TRIGGER=false`; restrict with
+  `INVESTIGATOR_AUTO_KINDS=whale_transfer,...`.
+- **API:** `POST /investigations` inserts a `queued` row; the worker
+  builds the package.
+- **CLI:** `python src/main.py --chain 1 --tx 0x...`.
+
+The evidence package also carries the `alerts` rows that selected the tx
+(with `source_engine` provenance).
+
+## Providers ($0 options)
+
+| `LLM_PROVIDER` | What runs | Cost |
+|---|---|---|
+| unset (default) | OpenAI-compatible `POST $LLM_BASE_URL/chat/completions`; needs `LLM_BASE_URL` + `LLM_API_KEY` + `LLM_MODEL`, else package-only (`awaiting_model`) | depends on endpoint; a local Ollama (`LLM_BASE_URL=http://host.docker.internal:11434/v1`, `LLM_API_KEY=ollama`) is free |
+| `deterministic` | offline template (`deterministic.py`): restates stored evidence as fact findings citing the package's tx/blocks, confidence `low`, no intent/attribution claims; same validator; zero HTTP | $0 |
 
 ## Run
 

@@ -93,7 +93,7 @@ Batch/CLI services run on demand, not as daemons: `mev_analyzer`
 | Engine 3 wallet intel | ✅ | ✅ | ⚠️ transfers stored live; no wallet scores yet in a short run |
 | Engine 4 DEX radar | ✅ | ✅ | ✅ pinned pools, liquidity events + reserves stored live |
 | Engine 5 MEV | ✅ | ✅ | ❌ batch job, not in compose; not run live |
-| Engine 6 AI investigator | ✅ | ✅ (fake provider) | ⚠️ worker starts; no real LLM calls |
+| Engine 6 AI investigator | ✅ | ✅ (fake provider) | ⚠️ worker auto-investigates live whale alerts (eth + Base) with the `deterministic` provider, citations validated; no real LLM run yet |
 | Engine 7 dispatcher/API | ✅ | ✅ (HTTP fakes) | ⚠️ log-only delivery + API `/health` live; no real Telegram/Discord |
 | Dashboard | ✅ | ✅ | ✅ production build serves 200 |
 | Execution layer | design doc only | — | NOT IMPLEMENTED |

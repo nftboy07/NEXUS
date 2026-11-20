@@ -27,5 +27,6 @@ class EvidencePackage(BaseModel):
     transfers: list[dict] = []
     wallets: list[WalletSummary] = []
     hypotheses: list[dict] = []  # Engine 3 related-wallet hypotheses, when present
+    alerts: list[dict] = []  # Stage A alerts (alerts table) referencing this tx, with source_engine
     missing: list[str] = []
     citable: list[dict] = []  # exact {tx_hash, block_number} pairs a report may cite

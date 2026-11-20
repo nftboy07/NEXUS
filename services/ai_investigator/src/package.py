@@ -15,6 +15,16 @@ def build_package(conn: psycopg.Connection, chain_id: int, tx_hash: str) -> Evid
         cols = [d.name for d in cur.description]
         return [dict(zip(cols, r)) for r in cur.fetchall()]
 
+    # Stage A context: alerts that selected this tx (provenance: source_engine)
+    try:
+        pkg.alerts = rows(
+            "SELECT id, source_engine, kind, record FROM alerts WHERE chain_id=%s AND "
+            "(lower(record->'facts'->>'tx_hash')=%s "
+            " OR lower(record->'facts'->'evidence'->0->>'tx_hash')=%s) ORDER BY id LIMIT 20",
+            (chain_id, (tx_hash or "").lower(), (tx_hash or "").lower()))
+    except psycopg.Error:
+        conn.rollback()
+
     tx = rows(
         "SELECT hash, sender, recipient, value, status, block_number, nonce "
         "FROM transactions WHERE chain_id=%s AND hash=%s",
@@ -79,7 +89,7 @@ def build_package(conn: psycopg.Connection, chain_id: int, tx_hash: str) -> Evid
         conn.rollback()  # table may not exist yet — enrichment absent, not fabricated
 
     # Citable: every stored tx/log block reference in the package
-    pkg.citable = [{"tx_hash": tx_hash, "block_number": block_num}]
-    pkg.citable += [{"tx_hash": r["tx_hash"], "block_number": r["block_number"]}
-                    for r in pkg.transfers if r.get("block_number")]
+    pairs = [(tx_hash, block_num)] + [(r["tx_hash"], r["block_number"])
+                                       for r in pkg.transfers if r.get("block_number")]
+    pkg.citable = [{"tx_hash": h, "block_number": b} for h, b in dict.fromkeys(pairs)]
     return pkg
