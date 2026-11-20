@@ -23,9 +23,9 @@ function seed(): FakeDexStore {
   store.pools.set(PID, pool);
   // add 1000/1000 then remove 600/600 -> 60% withdrawal
   store.liquidityEvents.push(
-    { poolId: PID, eventType: "add", amount0: "1000", amount1: "1000", txHash: "0x" + "a".repeat(64), blockNumber: 200n },
-    { poolId: PID, eventType: "remove", amount0: "600", amount1: "600", txHash: "0x" + "b".repeat(64), blockNumber: 210n },
-    { poolId: PID, eventType: "swap", amount0: "50", amount1: "0", txHash: "0x" + "c".repeat(64), blockNumber: 205n }
+    { poolId: PID, chainId: 1, eventType: "add", amount0: "1000", amount1: "1000", txHash: "0x" + "a".repeat(64), blockNumber: 200n },
+    { poolId: PID, chainId: 1, eventType: "remove", amount0: "600", amount1: "600", txHash: "0x" + "b".repeat(64), blockNumber: 210n },
+    { poolId: PID, chainId: 1, eventType: "swap", amount0: "50", amount1: "0", txHash: "0x" + "c".repeat(64), blockNumber: 205n }
   );
   store.reserves.push({
     poolId: PID,

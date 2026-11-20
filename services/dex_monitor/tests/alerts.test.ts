@@ -38,6 +38,7 @@ function seededStore(net0: bigint, net1: bigint): FakeDexStore {
   store.pools.set(PID, pool);
   store.liquidityEvents.push({
     poolId: PID,
+    chainId: 1,
     eventType: "add",
     amount0: net0.toString(),
     amount1: net1.toString(),

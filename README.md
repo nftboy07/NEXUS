@@ -88,18 +88,19 @@ Batch/CLI services run on demand, not as daemons: `mev_analyzer`
 
 | Component | Implemented | Tested with fixtures | Live-verified |
 |---|---|---|---|
-| Engine 1 listener | ✅ | ✅ | ❌ (no Docker in build env) |
-| Engine 2 mempool | ✅ | ✅ | ❌ |
-| Engine 3 wallet intel | ✅ | ✅ | ❌ |
-| Engine 4 DEX radar | ✅ | ✅ | ❌ |
-| Engine 5 MEV | ✅ | ✅ | ❌ |
-| Engine 6 AI investigator | ✅ | ✅ (fake provider) | ❌ (no real LLM calls in tests) |
-| Engine 7 dispatcher/API | ✅ | ✅ (HTTP fakes) | ❌ (no real Telegram/Discord) |
-| Dashboard | ✅ | ✅ | ❌ |
+| Engine 1 listener | ✅ | ✅ | ✅ `scripts/smoke.sh` (ingest, restart catch-up, dedup, no gaps, chain isolation) |
+| Engine 2 mempool | ✅ | ✅ | ✅ pending txs stored from public WSS (eth + Base) |
+| Engine 3 wallet intel | ✅ | ✅ | ⚠️ transfers stored live; no wallet scores yet in a short run |
+| Engine 4 DEX radar | ✅ | ✅ | ✅ pinned pools, liquidity events + reserves stored live |
+| Engine 5 MEV | ✅ | ✅ | ❌ batch job, not in compose; not run live |
+| Engine 6 AI investigator | ✅ | ✅ (fake provider) | ⚠️ worker starts; no real LLM calls |
+| Engine 7 dispatcher/API | ✅ | ✅ (HTTP fakes) | ⚠️ log-only delivery + API `/health` live; no real Telegram/Discord |
+| Dashboard | ✅ | ✅ | ✅ production build serves 200 |
 | Execution layer | design doc only | — | NOT IMPLEMENTED |
 
-No component has been smoke-tested against live Postgres/Redis/RPC in the
-build environment (Docker unavailable); all tests are fixture/fake based.
+Live-verified = `bash scripts/smoke.sh` passing (0 failures) on Docker against
+free public RPCs (publicnode, Ethereum + Base). All other tests are
+fixture/fake based.
 
 ## Security
 

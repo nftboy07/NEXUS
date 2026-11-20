@@ -27,10 +27,10 @@ async function main() {
   const filterMode = (process.env.LOG_FILTER_MODE ?? "scoped").toLowerCase();
   log.info("loaded log filters", { filters: baseFilters.map((f) => f.name), mode: filterMode });
   const tokens = (JSON.parse(readFileSync(
-    new URL("../../packages/chain_config/tokens.json", import.meta.url), "utf8")) as { tokens: TokenEntry[] }).tokens;
+    new URL("../../../packages/chain_config/tokens.json", import.meta.url), "utf8")) as { tokens: TokenEntry[] }).tokens;
   const dexes = (JSON.parse(readFileSync(
-    new URL("../../packages/chain_config/dexes.json", import.meta.url), "utf8")) as { dexes: DexEntry[] }).dexes;
-  const maxFilterAddresses = Number(process.env.MAX_FILTER_ADDRESSES ?? 100);
+    new URL("../../../packages/chain_config/dexes.json", import.meta.url), "utf8")) as { dexes: DexEntry[] }).dexes;
+  const maxFilterAddresses = Number(process.env.MAX_FILTER_ADDRESSES ?? 10);
   const filterRefreshSeconds = Number(process.env.FILTER_REFRESH_SECONDS ?? 60);
 
   const databaseUrl = process.env.DATABASE_URL;
@@ -45,6 +45,7 @@ async function main() {
   await redis.connect();
   const publisher = new RedisPublisher(redis);
 
+  let stopping = false;
   const runners = await runChains(
     chains.map((chain) => ({
       chain,
@@ -56,6 +57,7 @@ async function main() {
       chunkSize: Number(process.env.BACKFILL_CHUNK_SIZE ?? 2000),
       startBackfillBlocks: Number(process.env.START_BACKFILL_BLOCKS ?? 50),
       ingestTransactions: (process.env.INGEST_TRANSACTIONS ?? "true") !== "false",
+      txFetchConcurrency: Number(process.env.TX_FETCH_CONCURRENCY ?? 8),
       heartbeatTimeoutMs: Number(process.env.HEARTBEAT_TIMEOUT_MS ?? 60_000),
       filterRefresh: filterMode === "scoped"
         ? {
@@ -71,16 +73,17 @@ async function main() {
           }
         : undefined,
     })),
-    (chain, err) => log.error("chain failed to start — continuing with others", { chain: chain.name, err: String(err) })
+    (chain, err) => log.error("chain failed to start — continuing with others, will retry", { chain: chain.name, err: String(err) }),
+    { retryDelayMs: Number(process.env.CHAIN_START_RETRY_MS ?? 15_000), isStopped: () => stopping }
   );
 
   if (runners.length === 0) {
-    log.error("no chains started; exiting");
-    process.exitCode = 1;
+    log.error("no chains started yet; retrying in background");
   }
 
   const shutdown = async (signal: string) => {
     log.info("shutdown requested", { signal });
+    stopping = true;
     await Promise.allSettled(runners.map((r) => r.stop()));
     await publisher.close();
     await store.close();

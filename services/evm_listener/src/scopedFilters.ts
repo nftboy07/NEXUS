@@ -8,7 +8,7 @@
 //       pinned pools (dexes.json) + every pool in the pools table.
 // Factory PoolCreated subscriptions are unchanged — they carry their own
 // contract addresses.
-// Address arrays are chunked at MAX_FILTER_ADDRESSES (default 100) per
+// Address arrays are chunked at MAX_FILTER_ADDRESSES (default 10 — publicnode's eth_getLogs cap) per
 // filter for both eth_getLogs and WS subscriptions.
 
 import type { ParsedLogFilter } from "./subscriptions.js";

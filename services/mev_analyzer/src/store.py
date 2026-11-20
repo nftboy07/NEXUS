@@ -45,9 +45,9 @@ class PgMevStore:
             "       t.sender, le.block_number "
             "FROM liquidity_events le LEFT JOIN transactions t "
             "  ON t.chain_id=%s AND t.hash=le.tx_hash "
-            "WHERE le.block_number=%s AND le.event_type='swap' "
+            "WHERE le.chain_id=%s AND le.block_number=%s AND le.event_type='swap' "
             "ORDER BY le.tx_hash",
-            (chain_id, block))
+            (chain_id, chain_id, block))
 
     def reserves_at(self, pool_id, block):
         rows = self._rows(

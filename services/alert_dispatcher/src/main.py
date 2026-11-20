@@ -28,7 +28,7 @@ def log() -> logging.Logger:
 
     lg = logging.getLogger("alert_dispatcher")
     h = logging.StreamHandler(); h.setFormatter(F()); lg.handlers = [h]
-    lg.setLevel(os.getenv("LOG_LEVEL", "INFO"))
+    lg.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
     return lg
 
 

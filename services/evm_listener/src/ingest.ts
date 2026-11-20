@@ -15,6 +15,8 @@ export interface IngestDeps {
   log: Logger;
   /** Fetch tx + receipt rows for log tx hashes (env INGEST_TRANSACTIONS, default true). */
   ingestTransactions?: boolean;
+  /** Parallel tx+receipt fetches per batch (TX_FETCH_CONCURRENCY, default 8). */
+  txFetchConcurrency?: number;
 }
 
 export interface IngestStats {
@@ -37,7 +39,7 @@ export async function ingestLogs(logs: SourceLog[], deps: IngestDeps): Promise<I
     });
     if (result === "duplicate") {
       stats.duplicates++;
-      deps.log.info("duplicate log suppressed", {
+      deps.log.debug("duplicate log suppressed", {
         chain_id: deps.chainId,
         block_hash: l.blockHash,
         tx_hash: l.transactionHash,
@@ -85,7 +87,19 @@ export async function ingestTransactions(
   const existing = await deps.store.existingTransactions(deps.chainId, unique);
   const missing = unique.filter((h) => !existing.has(h));
   let stored = 0;
-  for (const hash of missing) {
+  const concurrency = Math.max(1, deps.txFetchConcurrency ?? 8);
+  let next = 0;
+  const worker = async () => {
+    while (next < missing.length) {
+      const hash = missing[next++];
+      if (await fetchAndStoreTransaction(hash, source, deps)) stored++;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, missing.length) }, worker));
+  return stored;
+}
+
+async function fetchAndStoreTransaction(hash: string, source: ChainSource, deps: IngestDeps): Promise<boolean> {
     try {
       const [tx, receipt] = await Promise.all([
         retry(() => source.getTransaction(hash), RPC_RETRY),
@@ -102,16 +116,15 @@ export async function ingestTransactions(
         nonce: tx.nonce,
         blockHash: tx.blockHash,
       });
-      stored++;
+      return true;
     } catch (err) {
       deps.log.warn("transaction fetch failed; left for next backfill", {
         chain_id: deps.chainId,
         tx_hash: hash,
         err: String(err),
       });
+      return false;
     }
-  }
-  return stored;
 }
 
 export type UpsertOutcome = "inserted" | "duplicate";

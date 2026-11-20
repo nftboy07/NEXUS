@@ -14,6 +14,7 @@ export async function recordLiquidityEvent(
   const eventType = decoded.kind === "LiquidityAdded" ? "add" : decoded.kind === "LiquidityRemoved" ? "remove" : "swap";
   await store.insertLiquidityEvent({
     poolId: poolId(ev.chain_id, poolAddress),
+    chainId: ev.chain_id,
     eventType,
     amount0: decoded.kind === "Swap" ? decoded.amount0In.toString() : decoded.amount0.toString(),
     amount1: decoded.kind === "Swap" ? decoded.amount1In.toString() : decoded.amount1.toString(),

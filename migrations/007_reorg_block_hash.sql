@@ -1,6 +1,7 @@
 -- Reorg propagation (Wave 1 follow-up): downstream engines invalidate rows
 -- derived from orphaned blocks. block_hash is nullable for rows written
 -- before this column existed.
+ALTER TABLE liquidity_events ADD COLUMN IF NOT EXISTS chain_id INTEGER;
 ALTER TABLE liquidity_events ADD COLUMN IF NOT EXISTS block_hash TEXT;
 ALTER TABLE pool_reserves   ADD COLUMN IF NOT EXISTS block_hash TEXT;
 ALTER TABLE wallet_transfers ADD COLUMN IF NOT EXISTS block_hash TEXT;

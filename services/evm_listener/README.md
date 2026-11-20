@@ -87,4 +87,4 @@ Every `FILTER_REFRESH_SECONDS` (60) the derived filter set is re-read
 from the DB; on change the WS watchers resubscribe and backfill runs
 from the checkpoint — new addresses get covered from then on; earlier
 history is NOT backfilled. Filters chunk at `MAX_FILTER_ADDRESSES`
-(100).
+(10 — publicnode rejects more per `eth_getLogs`).

@@ -212,6 +212,18 @@ export function fakeClients(source: ChainSource) {
     getBlock: ({ blockNumber }: { blockNumber: bigint }) => source.getBlock(blockNumber),
     getLogs: (args: { topics: string[][]; address?: string | string[]; fromBlock: bigint; toBlock: bigint }) =>
       source.getLogs(args),
+    // viemChainSource.getLogs issues raw eth_getLogs; answer with RPC-shaped (hex) logs.
+    request: async ({ method, params }: { method: string; params: [{ topics: (string[] | null)[]; address?: string | string[]; fromBlock: string; toBlock: string }] }) => {
+      if (method !== "eth_getLogs") throw new Error(`fake client: unsupported ${method}`);
+      const [f] = params;
+      const logs = await source.getLogs({ topics: f.topics, address: f.address, fromBlock: BigInt(f.fromBlock), toBlock: BigInt(f.toBlock) });
+      return logs.map((l) => ({
+        ...l,
+        blockNumber: `0x${l.blockNumber.toString(16)}`,
+        logIndex: `0x${l.logIndex.toString(16)}`,
+        transactionIndex: l.transactionIndex == null ? null : `0x${l.transactionIndex.toString(16)}`,
+      }));
+    },
     getTransaction: ({ hash }: { hash: string }) => source.getTransaction(hash),
     getTransactionReceipt: ({ hash }: { hash: string }) => source.getTransactionReceipt(hash),
   };

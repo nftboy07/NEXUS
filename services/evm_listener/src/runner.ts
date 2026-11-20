@@ -32,6 +32,7 @@ export interface RunnerDeps {
   startBackfillBlocks?: number;
   /** Fetch tx+receipt rows for log tx hashes (INGEST_TRANSACTIONS, default true). */
   ingestTransactions?: boolean;
+  txFetchConcurrency?: number;
   /** Scoped-filter refresh: rebuild filters from watchlists/pools every
    * intervalSeconds; resubscribes + backfills from checkpoint on change.
    * Absent = static filters (LOG_FILTER_MODE=full behaviour). */
@@ -76,6 +77,7 @@ export class ChainRunner {
       publisher: this.deps.publisher,
       log: this.log,
       ingestTransactions: this.deps.ingestTransactions,
+      txFetchConcurrency: this.deps.txFetchConcurrency,
     };
   }
 
@@ -270,20 +272,55 @@ export class ChainRunner {
   }
 }
 
+export interface RunChainsOptions {
+  /** Retry a chain whose start failed after this delay (doubling, capped at
+   * 5 min) until it starts; it is appended to the returned array then. */
+  retryDelayMs?: number;
+  /** Return true to cancel pending retries (shutdown). */
+  isStopped?: () => boolean;
+}
+
 /** Run one runner per chain; one chain failing must not stop the others. */
-export async function runChains(deps: RunnerDeps[], onChainError?: (chain: ChainConfig, err: unknown) => void): Promise<ChainRunner[]> {
+export async function runChains(
+  deps: RunnerDeps[],
+  onChainError?: (chain: ChainConfig, err: unknown) => void,
+  opts: RunChainsOptions = {}
+): Promise<ChainRunner[]> {
   const runners: ChainRunner[] = [];
-  const results = await Promise.allSettled(
-    deps.map(async (d) => {
-      const runner = new ChainRunner(d);
+  const start = async (d: RunnerDeps) => {
+    const runner = new ChainRunner(d);
+    try {
       await runner.start();
-      return runner;
+    } catch (err) {
+      await runner.stop().catch(() => {});
+      throw err;
+    }
+    return runner;
+  };
+  const retryLater = (d: RunnerDeps, delayMs: number) => {
+    const t = setTimeout(async () => {
+      if (opts.isStopped?.()) return;
+      try {
+        runners.push(await start(d));
+        d.log.info("chain started after retry", { chain: d.chain.name });
+      } catch (err) {
+        onChainError?.(d.chain, err);
+        retryLater(d, Math.min(delayMs * 2, 300_000));
+      }
+    }, delayMs);
+    t.unref?.();
+  };
+  // Report each failure as it happens, not after every other chain's
+  // (possibly long) backfill has finished.
+  await Promise.all(
+    deps.map(async (d) => {
+      try {
+        runners.push(await start(d));
+      } catch (err) {
+        onChainError?.(d.chain, err);
+        if (opts.retryDelayMs) retryLater(d, opts.retryDelayMs);
+      }
     })
   );
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i];
-    if (r.status === "fulfilled") runners.push(r.value);
-    else onChainError?.(deps[i].chain, r.reason);
-  }
   return runners;
 }

@@ -139,24 +139,37 @@ export async function backfillRange(
 
   for (const [start, end] of chunks) {
     const logs = await fetchLogs(source, filters, start, end, deps.log);
-    const stats = await ingestLogs(logs, deps);
-    result.logsInserted += stats.inserted;
-    result.logsDuplicate += stats.duplicates;
-    await ingestTransactions(logs, source, deps);
+    const byBlock = new Map<bigint, SourceLog[]>();
+    for (const l of logs) {
+      const list = byBlock.get(l.blockNumber);
+      if (list) list.push(l);
+      else byBlock.set(l.blockNumber, [l]);
+    }
+    const chunkStats = { inserted: 0, duplicates: 0 };
 
+    // Block-at-a-time so the checkpoint advances steadily through a large
+    // chunk (and a restart resumes mid-chunk) instead of only after every
+    // tx in the chunk has been enriched.
     for (let n = start; n <= end; n++) {
+      const blockLogs = byBlock.get(n) ?? [];
+      const stats = await ingestLogs(blockLogs, deps);
+      chunkStats.inserted += stats.inserted;
+      chunkStats.duplicates += stats.duplicates;
+      await ingestTransactions(blockLogs, source, deps);
       const block = await source.getBlock(n);
       const r = await ingestBlock(block, deps);
       if (r === "inserted") result.blocksStored++;
       // The block's checkpoint advances only after its events are stored+published.
       await advanceCheckpoint(deps.store, deps.chainId, n, null);
     }
+    result.logsInserted += chunkStats.inserted;
+    result.logsDuplicate += chunkStats.duplicates;
 
     deps.log.info("backfill chunk complete", {
       chain_id: deps.chainId,
       range: `${start}-${end}`,
-      logs_inserted: stats.inserted,
-      duplicates: stats.duplicates,
+      logs_inserted: chunkStats.inserted,
+      duplicates: chunkStats.duplicates,
     });
   }
 

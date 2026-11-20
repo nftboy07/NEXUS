@@ -20,6 +20,7 @@ export interface PoolRow {
 
 export interface LiquidityEventRow {
   poolId: string;
+  chainId: number;
   eventType: "add" | "remove" | "swap";
   amount0: string;
   amount1: string;
@@ -100,9 +101,9 @@ export class PgDexStore implements DexStore {
 
   async insertLiquidityEvent(e: LiquidityEventRow): Promise<void> {
     await this.pool.query(
-      `INSERT INTO liquidity_events (pool_id, event_type, amount0, amount1, tx_hash, block_number, block_hash)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [e.poolId, e.eventType, e.amount0, e.amount1, e.txHash, e.blockNumber.toString(), e.blockHash ?? null]
+      `INSERT INTO liquidity_events (pool_id, chain_id, event_type, amount0, amount1, tx_hash, block_number, block_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [e.poolId, e.chainId, e.eventType, e.amount0, e.amount1, e.txHash, e.blockNumber.toString(), e.blockHash ?? null]
     );
   }
 

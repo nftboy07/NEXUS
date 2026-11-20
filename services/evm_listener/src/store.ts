@@ -169,7 +169,8 @@ export class PgStore implements EventStore {
     const res = await this.pool.query(
       `SELECT id FROM pools WHERE chain_id = $1`, [chainId]
     );
-    return res.rows.map((r) => r.id.toLowerCase());
+    // pools.id is "<chain_id>:<address>" (dex_monitor poolId); filters need the bare address.
+    return res.rows.map((r) => String(r.id).split(":").pop()!.toLowerCase());
   }
 
   async recordProviderHealth(row: { provider: string; chainId: number; latencyMs: number; errors: number }): Promise<void> {

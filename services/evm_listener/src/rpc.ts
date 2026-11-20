@@ -1,6 +1,6 @@
 // viem public clients per chain: WebSocket + HTTP, primary and secondary.
 
-import { createPublicClient, http, webSocket, type PublicClient } from "viem";
+import { createPublicClient, formatLog, http, numberToHex, webSocket, type PublicClient, type RpcLog } from "viem";
 import type { ChainConfig } from "./config.js";
 
 export type ProviderRole = "primary" | "secondary";
@@ -15,7 +15,11 @@ function makeClients(role: ProviderRole, wssUrl: string, httpUrl: string): Chain
   return {
     role,
     ws: createPublicClient({ transport: webSocket(wssUrl) }),
-    http: createPublicClient({ transport: http(httpUrl) }),
+    // Callers (backfill/ingest) already retry with backoff; viem's default 3
+    // inner retries x 10s timeout delayed dead-endpoint errors by ~1 min.
+    http: createPublicClient({
+      transport: http(httpUrl, { retryCount: 1, timeout: Number(process.env.RPC_TIMEOUT_MS ?? 10_000) }),
+    }),
   };
 }
 
@@ -89,8 +93,13 @@ export function viemChainSource(client: PublicClient): ChainSource {
       };
     },
     getLogs: async ({ topics, address, fromBlock, toBlock }) => {
-      const logs = await client.getLogs({ fromBlock, toBlock, topics, address } as never);
-      return logs.map((l) => ({
+      // Raw eth_getLogs: viem's getLogs() ignores a `topics` param (it only
+      // builds topics from event/args), which silently unscoped every filter.
+      const raw = (await client.request({
+        method: "eth_getLogs",
+        params: [{ address: address as never, topics: topics as never, fromBlock: numberToHex(fromBlock), toBlock: numberToHex(toBlock) }],
+      })) as RpcLog[];
+      return raw.map((r) => formatLog(r)).map((l) => ({
         address: l.address,
         blockHash: l.blockHash ?? "",
         blockNumber: l.blockNumber ?? 0n,

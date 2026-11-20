@@ -78,4 +78,4 @@ Filters rebuild every `FILTER_REFRESH_SECONDS` (default 60). When a new
 watchlist wallet or pool appears, the listener resubscribes and
 backfills **from the checkpoint forward** — activity before the address
 was added is intentionally NOT backfilled. Address arrays chunk at
-`MAX_FILTER_ADDRESSES` (default 100) per filter.
+`MAX_FILTER_ADDRESSES` (default 10) per filter.

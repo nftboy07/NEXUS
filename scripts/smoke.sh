@@ -27,12 +27,12 @@ fi
 if [ -z "${WSS_RPC_URL_BASE:-}" ] || [ -z "${HTTP_RPC_URL_BASE:-}" ]; then
   info "Base RPC env unset; smoke run will inject free public endpoints:"
   info "  WSS_RPC_URL_BASE=wss://base-rpc.publicnode.com"
-  info "  HTTP_RPC_URL_BASE=https://mainnet.base.org"
+  info "  HTTP_RPC_URL_BASE=https://base-rpc.publicnode.com"
 fi
 : "${WSS_RPC_URL:=wss://ethereum-rpc.publicnode.com}"
 : "${HTTP_RPC_URL:=https://ethereum.publicnode.com}"
 : "${WSS_RPC_URL_BASE:=wss://base-rpc.publicnode.com}"
-: "${HTTP_RPC_URL_BASE:=https://mainnet.base.org}"
+: "${HTTP_RPC_URL_BASE:=https://base-rpc.publicnode.com}"
 export WSS_RPC_URL HTTP_RPC_URL WSS_RPC_URL_BASE HTTP_RPC_URL_BASE
 : "${NEXUS_API_KEY:=smoke-key}"; export NEXUS_API_KEY
 

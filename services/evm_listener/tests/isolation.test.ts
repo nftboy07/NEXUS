@@ -45,4 +45,25 @@ describe("per-chain isolation", () => {
     expect((await store.getCheckpoint(8453))?.lastBlock).toBe(100n);
     await Promise.all(runners.map((r) => r.stop()));
   });
+
+  it("retries a chain whose start failed until it comes up", async () => {
+    const flaky = FakeSource.fromFixture(makeBlocks(100n, 100n), [], 100n);
+    const realHead = flaky.getBlockNumber.bind(flaky);
+    let calls = 0;
+    flaky.getBlockNumber = () => (++calls === 1 ? Promise.reject(new Error("endpoint dead")) : realHead());
+    const store = new FakeStore();
+    await store.setCheckpoint(1, 99n, null);
+    const errors: string[] = [];
+    const runners = await runChains(
+      [{ chain: fakeChain(1, "ethereum"), filters, store, publisher: new FakePublisher(), log, clients: fakeClients(flaky) }],
+      (chain) => errors.push(chain.name),
+      { retryDelayMs: 10 }
+    );
+    expect(runners).toHaveLength(0);
+    expect(errors).toEqual(["ethereum"]);
+    for (let i = 0; i < 100 && runners.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(runners).toHaveLength(1);
+    expect((await store.getCheckpoint(1))?.lastBlock).toBe(100n);
+    await Promise.all(runners.map((r) => r.stop()));
+  });
 });
