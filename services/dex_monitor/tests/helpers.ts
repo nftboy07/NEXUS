@@ -81,7 +81,7 @@ export class FakeDexStore implements DexStore {
   pools = new Map<string, PoolRow>();
   liquidityEvents: LiquidityEventRow[] = [];
   reserves: ReserveRow[] = [];
-  alerts: { destination: string; message: string }[] = [];
+  alerts: { dedupKey?: string; destination: string; message: string }[] = [];
   txSenders = new Map<string, string>();
 
   async upsertPool(p: PoolRow): Promise<void> {
