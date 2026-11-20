@@ -14,6 +14,7 @@ export default async function Overview() {
       <div className="card"><h2>Overview</h2>
         <p>Autonomous Blockchain Intelligence Network — deterministic detection, evidence-backed intelligence.</p>
       </div>
+      {(!health || !alerts) && <div className="card error">API unavailable — {[!health && "health", !alerts && "alerts"].filter(Boolean).join(" and ")} could not be loaded.</div>}
       <div className="card"><h3>Chains</h3>
         <table><thead><tr><th>chain</th><th>checkpoint</th><th>latest stored</th><th>lag</th></tr></thead>
           <tbody>{(health?.checkpoints ?? []).map(c =>
@@ -25,7 +26,7 @@ export default async function Overview() {
           <tr key={k}><td>{k}</td><td>{v ?? "unavailable"}</td></tr>)}</tbody></table>
       </div>
       <div className="card"><h3>Alerts (recent)</h3>
-        <p><Link href="/alerts">{alerts?.length ?? 0} in last page</Link></p>
+        <p><Link href="/alerts">{alerts ? `${alerts.length} in last page` : "unavailable"}</Link></p>
       </div>
       <div className="card"><h3>Provider health</h3>
         <table><thead><tr><th>provider</th><th>chain</th><th>latency ms</th><th>errors</th><th>ts</th></tr></thead>
