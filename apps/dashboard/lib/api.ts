@@ -11,7 +11,11 @@ export async function apiGet(path: string): Promise<Response> {
 }
 
 export async function apiJson<T>(path: string): Promise<T | null> {
-  const res = await apiGet(path);
-  if (!res.ok) return null;
-  return res.json() as Promise<T>;
+  try {
+    const res = await apiGet(path);
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
 }

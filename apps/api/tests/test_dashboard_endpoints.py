@@ -61,3 +61,8 @@ def test_events_uses_logs_schema_columns(client, conn):
     sql = next(q for q, _ in conn.queries if "FROM LOGS" in q.upper())
     assert "transaction_hash" in sql and "contract" in sql
     assert "tx_hash" not in sql and "l.block_number" not in sql
+
+
+def test_negative_limit_is_validation_error(client, conn):
+    assert client.get("/alerts?limit=-1", headers=AUTH).status_code == 422
+    assert client.get("/events?chain_id=1&limit=0", headers=AUTH).status_code == 422

@@ -8,6 +8,9 @@ describe("explorer links", () => {
   it("builds basescan address links", () => {
     expect(explorerAddress(8453, "0xdef")).toBe("https://basescan.org/address/0xdef");
   });
+  it("strips chain-prefixed pool ids", () => {
+    expect(explorerAddress(1, "1:0xpool")).toBe("https://etherscan.io/address/0xpool");
+  });
   it("returns null for unknown chains", () => {
     expect(explorerTx(999, "0x")).toBeNull();
   });

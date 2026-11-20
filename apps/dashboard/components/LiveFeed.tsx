@@ -8,14 +8,21 @@ type Event = { tx_hash: string; block_number: number; address: string };
 export default function LiveFeed({ chainId }: { chainId: number }) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
+  const [error, setError] = useState(false);
   useEffect(() => {
     let live = true;
     async function tick() {
-      const [a, e] = await Promise.all([
-        fetch("/api/nexus/alerts?limit=25").then(r => r.ok ? r.json() : []),
-        fetch(`/api/nexus/events?chain_id=${chainId}&limit=25`).then(r => r.ok ? r.json() : []),
-      ]);
-      if (live) { setAlerts(a); setEvents(e); }
+      try {
+        const [ra, re] = await Promise.all([
+          fetch("/api/nexus/alerts?limit=25"),
+          fetch(`/api/nexus/events?chain_id=${chainId}&limit=25`),
+        ]);
+        if (!ra.ok || !re.ok) throw new Error("api");
+        const [a, e] = await Promise.all([ra.json(), re.json()]);
+        if (live) { setAlerts(a); setEvents(e); setError(false); }
+      } catch {
+        if (live) setError(true);
+      }
     }
     tick();
     const t = setInterval(tick, 10000);
@@ -23,6 +30,7 @@ export default function LiveFeed({ chainId }: { chainId: number }) {
   }, [chainId]);
   return (
     <>
+      {error && <div className="card error">API unavailable — showing last known data, retrying every 10s.</div>}
       <div className="card"><h3>Recent alerts</h3>
         <table><thead><tr><th>id</th><th>engine</th><th>kind</th><th>delivery</th><th>created</th></tr></thead>
           <tbody>{alerts.map(a => <tr key={a.id}>

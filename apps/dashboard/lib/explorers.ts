@@ -15,7 +15,9 @@ export function explorerTx(chainId: number, tx: string): string | null {
 
 export function explorerAddress(chainId: number, addr: string): string | null {
   const base = EXPLORERS[chainId];
-  return base ? `${base}/address/${addr}` : null;
+  // pool ids are "<chain_id>:<address>"; explorers need the bare address
+  const bare = addr.includes(":") ? addr.slice(addr.lastIndexOf(":") + 1) : addr;
+  return base ? `${base}/address/${bare}` : null;
 }
 
 export function explorerBlock(chainId: number, block: number): string | null {

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import psycopg
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel
 
 CHAINS_PATH = Path(__file__).resolve().parents[2] / "packages" / "chain_config" / "chains.json"
@@ -94,7 +94,7 @@ def _deliveries(conn, alert_id: int):
 
 
 @app.get("/alerts", dependencies=[Depends(require_key)])
-def alerts(limit: int = 50):
+def alerts(limit: int = Query(50, ge=1, le=1000)):
     conn = get_conn()
     rows = conn.execute(
         f"SELECT {ALERT_COLS} FROM alerts ORDER BY id DESC LIMIT %s",
@@ -159,7 +159,7 @@ def wallet(address: str):
 
 
 @app.get("/events", dependencies=[Depends(require_key)])
-def events(chain_id: int, limit: int = 50):
+def events(chain_id: int, limit: int = Query(50, ge=1, le=1000)):
     conn = get_conn()
     rows = conn.execute(
         "SELECT l.transaction_hash, b.number, l.contract FROM logs l "
@@ -174,7 +174,7 @@ def events(chain_id: int, limit: int = 50):
 
 
 @app.get("/pending", dependencies=[Depends(require_key)])
-def pending(status: Optional[str] = None, chain_id: Optional[int] = None, limit: int = 50):
+def pending(status: Optional[str] = None, chain_id: Optional[int] = None, limit: int = Query(50, ge=1, le=1000)):
     """Engine 2 pending lifecycle rows. These are unconfirmed mempool
     observations — never presented as confirmed transactions."""
     conn = get_conn()
@@ -199,7 +199,7 @@ def pending(status: Optional[str] = None, chain_id: Optional[int] = None, limit:
 
 
 @app.get("/pools", dependencies=[Depends(require_key)])
-def pools(chain_id: Optional[int] = None, limit: int = 50):
+def pools(chain_id: Optional[int] = None, limit: int = Query(50, ge=1, le=1000)):
     conn = get_conn()
     sql = ("SELECT id, dex, token0, token1, chain_id, fee_tier, created_block, "
            "discovery FROM pools")
@@ -234,7 +234,7 @@ def pool(pool_id: str):
 
 
 @app.get("/mev", dependencies=[Depends(require_key)])
-def mev(kind: Optional[str] = None, chain_id: Optional[int] = None, limit: int = 50):
+def mev(kind: Optional[str] = None, chain_id: Optional[int] = None, limit: int = Query(50, ge=1, le=1000)):
     conn = get_conn()
     sql = ("SELECT id, chain_id, block_number, kind, initiator, victim, pool_id, "
            "evidence, estimated_impact, confidence FROM mev_findings")
@@ -267,7 +267,7 @@ def _investigation_dict(r):
 
 
 @app.get("/investigations", dependencies=[Depends(require_key)])
-def investigations(limit: int = 50):
+def investigations(limit: int = Query(50, ge=1, le=1000)):
     conn = get_conn()
     rows = conn.execute(
         f"SELECT {INVESTIGATION_COLS} FROM investigations ORDER BY id DESC LIMIT %s",
