@@ -35,6 +35,12 @@ pip install -r requirements.txt
 export DATABASE_URL=... LLM_API_KEY=... LLM_MODEL=...
 python src/main.py --chain 1 --tx 0x...
 python src/main.py --chain 1 --address 0x...   # most recent stored tx
+python src/main.py --worker                    # daemon: consume 'queued' rows (POST /investigations)
+
+Worker mode claims rows atomically (FOR UPDATE SKIP LOCKED — N workers
+never process the same row), requeues 'awaiting_model' rows at startup
+when a model is configured, and requeues 'running' claims stale >10min.
+INVESTIGATOR_POLL_SECONDS sets the idle poll interval (default 10).
 ```
 
 Migration: `006_investigations_detail.sql` adds report/citations_valid/

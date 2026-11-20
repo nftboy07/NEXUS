@@ -64,6 +64,16 @@ services:
     depends_on: [postgres, redis]
     restart: unless-stopped
 
+  ai_investigator:
+    build: ./services/ai_investigator
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
+      REDIS_URL: redis://redis:6379
+    depends_on: [postgres, redis]
+    restart: unless-stopped
+    command: ["python", "src/main.py", "--worker"]
+
   api:
     build: ./apps/api
     env_file: .env
@@ -84,7 +94,8 @@ services:
 
 # Batch/CLI services intentionally run on demand, not as daemons:
 #   mev_analyzer (batch cursor over stored data) and ai_investigator
-#   (manual CLI trigger) — see services/*/README.md.
+#   ai_investigator CLI use (it also runs as a --worker compose service
+#   above) — see services/*/README.md.
 
 volumes:
   nexus_pg:

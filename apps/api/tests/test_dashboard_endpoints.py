@@ -44,8 +44,12 @@ def test_system_health(client, conn):
     conn.checkpoints = [(1, 190)]
     conn.blocks_max = {1: 200}
     conn.provider_health = [("rpc-a", 1, 120, 0, "2024-01-01")]
-    r = client.get("/system/health")
+    r = client.get("/system/health", headers=AUTH)
     body = r.json()
     assert body["checkpoints"][0]["lag"] == 10
     assert body["provider_health"][0]["provider"] == "rpc-a"
     assert body["streams"]["nexus:alerts"] is None  # no redis -> honest null
+
+
+def test_system_health_requires_auth(client):
+    assert client.get("/system/health").status_code == 401

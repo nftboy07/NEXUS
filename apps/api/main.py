@@ -330,7 +330,7 @@ def get_redis():
     return _redis_client
 
 
-@app.get("/system/health")
+@app.get("/system/health", dependencies=[Depends(require_key)])
 def system_health():
     conn = get_conn()
     cps = conn.execute(

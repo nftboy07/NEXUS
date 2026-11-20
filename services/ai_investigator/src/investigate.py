@@ -42,7 +42,8 @@ def _insert(conn: psycopg.Connection, trigger: str, evidence: dict, status: str,
 
 def _update(conn: psycopg.Connection, inv_id: int, status: str, **cols) -> None:
     sets = ", ".join(f"{k}=%s" for k in cols)
-    conn.execute(f"UPDATE investigations SET status=%s, {sets} WHERE id=%s",
+    tail = f", {sets}" if sets else ""
+    conn.execute(f"UPDATE investigations SET status=%s, updated_at=now(){tail} WHERE id=%s",
                  (status, *cols.values(), inv_id))
 
 
@@ -60,7 +61,22 @@ def run_investigation(
     inv_id = _insert(conn, "tx", pkg.model_dump(), "package_built", chain_id, tx_hash)
     conn.commit()
     log.info("evidence package built", extra={"investigation_id": inv_id, "missing": len(pkg.missing)})
+    return finish_investigation(conn, inv_id, pkg, transport=transport, log=log,
+                                api_key=api_key, model=model)
 
+
+def finish_investigation(
+    conn: psycopg.Connection,
+    inv_id: int,
+    pkg,
+    transport: Optional[httpx.BaseTransport] = None,
+    log: Optional[logging.Logger] = None,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+) -> int:
+    """LLM call + validation + storage for an existing investigations row
+    whose evidence package is `pkg` (used by the CLI path and the worker)."""
+    log = log or logging.getLogger("ai_investigator")
     prompt = PROMPT_PATH.read_text() + OUTPUT_FORMAT
     try:
         resp = call_model(prompt, pkg.model_dump_json(), transport=transport,

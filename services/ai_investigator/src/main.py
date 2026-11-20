@@ -24,18 +24,25 @@ def _log():
 
 def main() -> int:
     ap = argparse.ArgumentParser(prog="ai_investigator")
-    ap.add_argument("--chain", type=int, required=True)
+    ap.add_argument("--worker", action="store_true",
+                    help="daemon mode: consume 'queued' investigation rows")
+    ap.add_argument("--chain", type=int)
     ap.add_argument("--tx")
     ap.add_argument("--address")
     ap.add_argument("--dsn", default=None)
     args = ap.parse_args()
-    if not args.tx and not args.address:
-        ap.error("one of --tx or --address is required")
 
     import os
     dsn = args.dsn or os.environ["DATABASE_URL"]
     conn = psycopg.connect(dsn)
     log = _log()
+
+    if args.worker:
+        from worker import run_worker
+        run_worker(conn, log)
+        return 0
+    if not args.tx and not args.address:
+        ap.error("one of --tx or --address is required (or --worker)")
 
     from investigate import run_investigation
 
