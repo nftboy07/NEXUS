@@ -54,14 +54,52 @@ Constrained prototype target: **$200 in cloud/API credits** — RPC $45 / comput
 - [Budget](docs/BUDGET.md)
 - [Build Specification](docs/BUILD_SPEC.md) — instruction for AI coding agents
 
-## Quick start (starter listener)
+## Quick start
+
+### Whole stack (Docker Compose)
 
 ```bash
-cd services/evm_listener
-cp ../../.env.example .env   # set WSS_RPC_URL
-npm install
-npx tsx src/listener.ts
+cp .env.example .env   # set WSS_RPC_URL / HTTP_RPC_URL (+_BASE for Base), NEXUS_API_KEY
+docker compose up -d postgres redis   # migrations/ applies on first init
+docker compose up -d                  # api, dashboard, all engine daemons
+# dashboard -> http://localhost:3000, API -> http://localhost:8000/health
 ```
+
+Batch/CLI services run on demand, not as daemons: `mev_analyzer`
+(`python src/main.py` in its venv) and `ai_investigator`
+(`python src/main.py --chain 1 --tx 0x…`).
+
+### Running the test suites
+
+| Service | Command |
+|---|---|
+| evm_listener | `cd services/evm_listener && npm run typecheck && npm test` |
+| mempool_listener | `cd services/mempool_listener && npm run typecheck && npm test` |
+| dex_monitor | `cd services/dex_monitor && npm run typecheck && npm test` |
+| shared_utils | `cd packages/shared_utils && npm run typecheck && npm test` |
+| wallet_intelligence | `cd services/wallet_intelligence && .venv/Scripts/python -m pytest` |
+| mev_analyzer | `cd services/mev_analyzer && .venv/Scripts/python -m pytest` |
+| ai_investigator | `cd services/ai_investigator && .venv/Scripts/python -m pytest` |
+| alert_dispatcher | `cd services/alert_dispatcher && .venv/Scripts/python -m pytest` |
+| api | `cd apps/api && .venv/Scripts/python -m pytest` |
+| dashboard | `cd apps/dashboard && npm run build && npm run lint && npm run typecheck && npm test` |
+
+### Status (honest)
+
+| Component | Implemented | Tested with fixtures | Live-verified |
+|---|---|---|---|
+| Engine 1 listener | ✅ | ✅ | ❌ (no Docker in build env) |
+| Engine 2 mempool | ✅ | ✅ | ❌ |
+| Engine 3 wallet intel | ✅ | ✅ | ❌ |
+| Engine 4 DEX radar | ✅ | ✅ | ❌ |
+| Engine 5 MEV | ✅ | ✅ | ❌ |
+| Engine 6 AI investigator | ✅ | ✅ (fake provider) | ❌ (no real LLM calls in tests) |
+| Engine 7 dispatcher/API | ✅ | ✅ (HTTP fakes) | ❌ (no real Telegram/Discord) |
+| Dashboard | ✅ | ✅ | ❌ |
+| Execution layer | design doc only | — | NOT IMPLEMENTED |
+
+No component has been smoke-tested against live Postgres/Redis/RPC in the
+build environment (Docker unavailable); all tests are fixture/fake based.
 
 ## Security
 

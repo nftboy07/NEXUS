@@ -12,13 +12,7 @@ services:
   redis:
     image: redis:7
     ports: ["6379:6379"]
-  api:
-    build: ./apps/api
-    environment:
-      DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
-      REDIS_URL: redis://redis:6379
-    ports: ["8000:8000"]
-    depends_on: [postgres, redis]
+
   evm_listener:
     build:
       context: .
@@ -40,15 +34,57 @@ services:
       REDIS_URL: redis://redis:6379
     depends_on: [postgres, redis]
     restart: unless-stopped
-volumes:
-  nexus_pg:
+
+  dex_monitor:
+    build:
+      context: .
+      dockerfile: services/dex_monitor/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
+      REDIS_URL: redis://redis:6379
+    depends_on: [postgres, redis]
+    restart: unless-stopped
+
+  wallet_intelligence:
+    build: ./services/wallet_intelligence
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
+      REDIS_URL: redis://redis:6379
+    depends_on: [postgres, redis]
+    restart: unless-stopped
+
+  alert_dispatcher:
+    build: ./services/alert_dispatcher
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
+      REDIS_URL: redis://redis:6379
+    depends_on: [postgres, redis]
+    restart: unless-stopped
+
+  api:
+    build: ./apps/api
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
+      REDIS_URL: redis://redis:6379
+    ports: ["8000:8000"]
+    depends_on: [postgres, redis]
+    restart: unless-stopped
 
   dashboard:
     build: ./apps/dashboard
     environment:
       - NEXUS_API_URL=http://api:8000
       - NEXUS_API_KEY=${NEXUS_API_KEY}
-    ports:
-      - "3000:3000"
-    depends_on:
-      - api
+    ports: ["3000:3000"]
+    depends_on: [api]
+
+# Batch/CLI services intentionally run on demand, not as daemons:
+#   mev_analyzer (batch cursor over stored data) and ai_investigator
+#   (manual CLI trigger) — see services/*/README.md.
+
+volumes:
+  nexus_pg:
