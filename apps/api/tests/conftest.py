@@ -26,6 +26,13 @@ class FakeConn:
         self.alerts = []
         self.deliveries = {}
         self.checkpoints = []
+        self.pending = []
+        self.pools = []
+        self.reserves = {}
+        self.mev_findings = []
+        self.investigations = []
+        self.blocks_max = {}
+        self.provider_health = []
         self.committed = False
 
     def execute(self, sql, params=None):
@@ -53,6 +60,30 @@ class FakeConn:
             return FakeCur(self.alerts[: params[0]])
         if "FROM LOGS" in s:
             return FakeCur([])
+        if "INSERT INTO INVESTIGATIONS" in s:
+            self.investigations.append((len(self.investigations) + 1, *params) + (None,) * 7)
+            return FakeCur()
+        if "FROM INVESTIGATIONS WHERE ID" in s:
+            return FakeCur([i for i in self.investigations if i[0] == params[0]])
+        if "FROM INVESTIGATIONS" in s:
+            return FakeCur(self.investigations[: params[0]])
+        if "FROM PENDING_TRANSACTIONS" in s:
+            rows = self.pending
+            if params and len(params) > 1:
+                rows = [r for r in rows if r[8] == params[0]]
+            return FakeCur(rows[: params[-1]])
+        if "FROM POOLS WHERE ID" in s:
+            return FakeCur([pl for pl in self.pools if pl[0] == params[0]])
+        if "FROM POOLS" in s:
+            return FakeCur(self.pools[: params[-1]])
+        if "FROM POOL_RESERVES" in s:
+            return FakeCur(self.reserves.get(params[0], []))
+        if "FROM MEV_FINDINGS" in s:
+            return FakeCur(self.mev_findings[: params[-1]])
+        if "MAX(NUMBER) FROM BLOCKS" in s:
+            return FakeCur([(self.blocks_max.get(params[0]),)])
+        if "FROM PROVIDER_HEALTH" in s:
+            return FakeCur(self.provider_health)
         return FakeCur()
 
     def commit(self):
