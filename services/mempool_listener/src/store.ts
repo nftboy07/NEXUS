@@ -20,6 +20,8 @@ export interface PendingRow {
   status: PendingStatus;
   firstSeenBlock: bigint | null;
   includedBlock: bigint | null;
+  /** Set when inclusion was proven by receipt (no transactions row needed). */
+  includedBlockHash?: string | null;
   replacedBy: string | null;
   watchlistMatch?: string | null;
 }
@@ -73,18 +75,20 @@ export class PgPendingStore implements PendingStore {
          recipient = COALESCE($8, recipient),
          value = COALESCE($9, value),
          method = COALESCE($10, method),
-         decoded = COALESCE($11, decoded)
+         decoded = COALESCE($11, decoded),
+         included_block_hash = COALESCE($12, included_block_hash)
        WHERE chain_id=$1 AND hash=$2`,
       [chainId, hash, status, f.includedBlock?.toString() ?? null, f.replacedBy ?? null,
        f.sender ?? null, f.nonce?.toString() ?? null, f.recipient ?? null,
-       f.value ?? null, f.method ?? null, f.decoded ? JSON.stringify(f.decoded) : null]
+       f.value ?? null, f.method ?? null, f.decoded ? JSON.stringify(f.decoded) : null,
+       f.includedBlockHash ?? null]
     );
   }
 
   async pendingByStatus(chainId: number, statuses: PendingStatus[]): Promise<PendingRow[]> {
     const res = await this.pool.query(
       `SELECT chain_id, hash, sender, nonce, recipient, value, method, decoded, status,
-              first_seen_block, included_block, replaced_by
+              first_seen_block, included_block, included_block_hash, replaced_by
        FROM pending_transactions WHERE chain_id=$1 AND status = ANY($2)`,
       [chainId, statuses]
     );
@@ -95,6 +99,7 @@ export class PgPendingStore implements PendingStore {
       method: r.method, decoded: r.decoded, status: r.status,
       firstSeenBlock: r.first_seen_block === null ? null : BigInt(r.first_seen_block),
       includedBlock: r.included_block === null ? null : BigInt(r.included_block),
+      includedBlockHash: r.included_block_hash,
       replacedBy: r.replaced_by,
     }));
   }

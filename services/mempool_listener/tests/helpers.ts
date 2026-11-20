@@ -21,6 +21,7 @@ export class FakePendingStore implements PendingStore {
     if (!r) throw new Error(`unknown pending tx ${hash}`);
     r.status = status;
     if (f.includedBlock !== undefined) r.includedBlock = f.includedBlock;
+    if (f.includedBlockHash !== undefined) r.includedBlockHash = f.includedBlockHash;
     if (f.replacedBy !== undefined) r.replacedBy = f.replacedBy;
     if (f.sender !== undefined) r.sender = f.sender;
     if (f.nonce !== undefined) r.nonce = f.nonce;

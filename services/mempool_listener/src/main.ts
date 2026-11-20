@@ -13,7 +13,7 @@ import { decodeTx } from "./decoder.js";
 import { resolveCheckpoint } from "./lifecycle.js";
 import { publishTransition, pendingTxEvent, RedisStreamWriter, EVENTS_STREAM } from "./publisher.js";
 import { probePendingSupport, reportCapability } from "./capability.js";
-import { FetchQueue, type TxFetcher } from "./subscription.js";
+import { FetchQueue, RpcInclusionProbe, type TxFetcher } from "./subscription.js";
 import { WatchlistMatcher, PgWatchlists } from "./watchlist.js";
 
 const log = createLogger("mempool_listener");
@@ -36,6 +36,7 @@ async function runChain(
     },
   };
   const queue = new FetchQueue(fetcher, maxInflight, 50, log);
+  const probe = new RpcInclusionProbe(queue, httpClient);
   const emit = (e: Parameters<typeof publishTransition>[1]) => publishTransition(writer, e);
   const backoff = createBackoff({ baseMs: 1_000, capMs: 30_000, maxAttempts: 10 });
   let attempt = 0;
@@ -53,7 +54,7 @@ async function runChain(
 
       attempt = 0;
       const tick = setInterval(() => {
-        void resolveCheckpoint(store, emit, chain.id, chain.confirmations, dropAfter, log)
+        void resolveCheckpoint(store, emit, chain.id, chain.confirmations, dropAfter, log, probe)
           .catch((e) => log.error("resolve failed", { err: String(e) }));
       }, 15_000);
       try {

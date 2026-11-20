@@ -114,3 +114,46 @@ describe("pending lifecycle", () => {
     expect(JSON.stringify(ev)).not.toContain('"confirmed"');
   });
 });
+
+import type { InclusionProbe } from "../src/subscription.js";
+
+describe("RPC fallback for mined-but-unlogged txs", () => {
+  const probe = (receipt: { blockNumber: bigint; blockHash: string } | null, nonce: bigint | null): InclusionProbe => ({
+    getReceipt: async () => receipt,
+    getNonce: async () => nonce,
+  });
+
+  it("approval mined but absent from transactions -> INCLUDED via receipt", async () => {
+    const store = new FakePendingStore();
+    const { events, emit } = collect();
+    await store.upsertPending(pendingRow({ hash: "0xappr", firstSeenBlock: 100n }));
+    store.canonical.add("0xbh2");
+    store.checkpointBlock = 103n;
+    await resolveCheckpoint(store, emit, 1, 12, 50, log,
+      probe({ blockNumber: 101n, blockHash: "0xbh2" }, null));
+    const row = [...store.rows.values()][0];
+    expect(row.status).toBe("INCLUDED");
+    expect(row.includedBlock).toBe(101n);
+    expect(row.includedBlockHash).toBe("0xbh2");
+  });
+
+  it("no receipt + nonce consumed -> REPLACED with replaced_by null", async () => {
+    const store = new FakePendingStore();
+    const { emit } = collect();
+    await store.upsertPending(pendingRow({ hash: "0xrep", nonce: 5n, firstSeenBlock: 100n }));
+    store.checkpointBlock = 200n; // past drop window
+    await resolveCheckpoint(store, emit, 1, 12, 50, log, probe(null, 6n));
+    const row = [...store.rows.values()][0];
+    expect(row.status).toBe("REPLACED");
+    expect(row.replacedBy).toBeNull();
+  });
+
+  it("no receipt + nonce not consumed -> DROPPED", async () => {
+    const store = new FakePendingStore();
+    const { emit } = collect();
+    await store.upsertPending(pendingRow({ hash: "0xdrop", nonce: 5n, firstSeenBlock: 100n }));
+    store.checkpointBlock = 200n;
+    await resolveCheckpoint(store, emit, 1, 12, 50, log, probe(null, 5n));
+    expect([...store.rows.values()][0].status).toBe("DROPPED");
+  });
+});

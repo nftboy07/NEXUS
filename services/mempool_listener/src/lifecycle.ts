@@ -6,6 +6,7 @@
 // A pending tx is an early signal from one node's mempool, never a fact.
 
 import type { Logger } from "@nexus/shared-utils";
+import type { InclusionProbe } from "./subscription.js";
 import type { PendingRow, PendingStatus, PendingStore } from "./store.js";
 
 export interface LifecycleEvent {
@@ -57,6 +58,7 @@ export async function resolveCheckpoint(
   confirmations: number,
   dropAfterBlocks: number,
   log: Logger,
+  probe?: InclusionProbe,
 ): Promise<number> {
   const head = await store.checkpoint(chainId);
   if (head === null) return 0;
@@ -72,7 +74,9 @@ export async function resolveCheckpoint(
   // INCLUDED/CONFIRMED -> REORGED when the including block is non-canonical.
   for (const row of await store.pendingByStatus(chainId, ["INCLUDED", "CONFIRMED"])) {
     const inc = await store.getIncluded(chainId, row.hash);
-    if (inc?.blockHash && !(await store.isCanonicalBlock(chainId, inc.blockNumber ?? 0n, inc.blockHash))) {
+    const incHash = row.includedBlockHash ?? inc?.blockHash ?? null;
+    const incNum = row.includedBlock ?? inc?.blockNumber ?? null;
+    if (incHash && !(await store.isCanonicalBlock(chainId, incNum ?? 0n, incHash))) {
       if (await transition(store, emit, row, "REORGED", { block: head })) moved++;
     }
   }
@@ -91,8 +95,32 @@ export async function resolveCheckpoint(
         continue;
       }
     }
+    // Engine 1 only stores log-emitting txs; receipts are the fallback
+    // proof of inclusion for approvals/deployments/plain sends/failed txs.
+    if (probe && row.firstSeenBlock !== null && head - row.firstSeenBlock >= 2n) {
+      const receipt = await probe.getReceipt(chainId, row.hash);
+      if (receipt) {
+        if (await transition(store, emit, row, "INCLUDED", {
+          includedBlock: receipt.blockNumber,
+          includedBlockHash: receipt.blockHash,
+        })) moved++;
+        continue;
+      }
+    }
     if (row.firstSeenBlock !== null && head - row.firstSeenBlock > BigInt(dropAfterBlocks)) {
-      if (await transition(store, emit, row, "DROPPED", { block: head })) moved++;
+      // Drop window passed: a consumed account nonce means an unknown tx
+      // replaced this one (replacement hash unknowable -> replaced_by null).
+      let consumed = false;
+      if (probe && row.sender && row.nonce !== null) {
+        const nonce = await probe.getNonce(chainId, row.sender);
+        consumed = nonce !== null && nonce > row.nonce;
+      }
+      if (consumed) {
+        log.info("nonce consumed by unknown tx; marking replaced", { hash: row.hash });
+        if (await transition(store, emit, row, "REPLACED", { replacedBy: null })) moved++;
+      } else {
+        if (await transition(store, emit, row, "DROPPED", { block: head })) moved++;
+      }
     }
   }
   log.debug("checkpoint resolution", { chain_id: chainId, head: head.toString(), transitions: moved });
