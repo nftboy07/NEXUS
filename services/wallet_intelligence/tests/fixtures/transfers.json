@@ -1,0 +1,74 @@
+[
+  {
+    "chain_id": 1,
+    "kind": "log",
+    "dedup_key": "1:0xblock1:0xwtx:0",
+    "block_number": 100,
+    "block_hash": "0xblock1",
+    "tx_hash": "0xwtx",
+    "log_index": 0,
+    "payload": {
+      "contract": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x0000000000000000000000000000000000000000000000000000000000000100",
+        "0x0000000000000000000000000000000000000000000000000000000000000b0b"
+      ],
+      "data": "0x56bc75e2d63100000"
+    }
+  },
+  {
+    "chain_id": 1,
+    "kind": "log",
+    "dedup_key": "1:0xblock2:0xt1tx:0",
+    "block_number": 101,
+    "block_hash": "0xblock2",
+    "tx_hash": "0xt1tx",
+    "log_index": 0,
+    "payload": {
+      "contract": "0xt1",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x00000000000000000000000000000000000000000000000000000000000000f1",
+        "0x0000000000000000000000000000000000000000000000000000000000000aa1"
+      ],
+      "data": "0x64"
+    }
+  },
+  {
+    "chain_id": 1,
+    "kind": "log",
+    "dedup_key": "1:0xblock3:0xt2tx:0",
+    "block_number": 102,
+    "block_hash": "0xblock3",
+    "tx_hash": "0xt2tx",
+    "log_index": 0,
+    "payload": {
+      "contract": "0xt1",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x00000000000000000000000000000000000000000000000000000000000000f1",
+        "0x0000000000000000000000000000000000000000000000000000000000000aa2"
+      ],
+      "data": "0x64"
+    }
+  },
+  {
+    "chain_id": 1,
+    "kind": "log",
+    "dedup_key": "1:0xblock4:0xt3tx:0",
+    "block_number": 103,
+    "block_hash": "0xblock4",
+    "tx_hash": "0xt3tx",
+    "log_index": 0,
+    "payload": {
+      "contract": "0xt2",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x0000000000000000000000000000000000000000000000000000000000000aa1",
+        "0x0000000000000000000000000000000000000000000000000000000000000aa2"
+      ],
+      "data": "0x32"
+    }
+  }
+]

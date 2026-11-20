@@ -42,6 +42,27 @@ describe("normalizeLog", () => {
   });
 });
 
+describe("normalizeLog — ERC-20 Transfer detection", () => {
+  it("emits kind 'transfer' with decoded from/to/value for ERC-20 Transfer logs", () => {
+    const raw = toSourceLogs({ logs: loadFixture<FixtureLogs>("logs_chain_b_fork.json").logs })[0];
+    const transferLog = {
+      ...raw,
+      topics: [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x" + "0".repeat(24) + "aa".repeat(20),
+        "0x" + "0".repeat(24) + "bb".repeat(20),
+      ],
+      data: "0x" + 10n.toString(16).padStart(64, "0"),
+    };
+    const ev = normalizeLog(transferLog, 1);
+    expect(ev.kind).toBe("transfer");
+    expect(ev.payload.token).toBe(raw.address);
+    expect(ev.payload.from).toBe("0x" + "aa".repeat(20));
+    expect(ev.payload.to).toBe("0x" + "bb".repeat(20));
+    expect(ev.payload.value).toBe("10");
+  });
+});
+
 describe("normalizeBlock", () => {
   it("produces a block event with chain-scoped dedup key", () => {
     const { blocks } = loadFixture<FixtureBlocks>("blocks_chain_a.json");
