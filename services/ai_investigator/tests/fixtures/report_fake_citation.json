@@ -1,0 +1,10 @@
+{
+  "findings": [
+    {"kind": "fact", "statement": "The wallet sent funds via an unrelated earlier tx", "citations": ["0xdeadbeef"]}
+  ],
+  "citations": [{"tx_hash": "0xdeadbeef", "block_number": 42}],
+  "confidence": {"level": "high", "rationale": "fabricated"},
+  "alternative_explanations": [],
+  "missing_evidence": [],
+  "next_steps": []
+}

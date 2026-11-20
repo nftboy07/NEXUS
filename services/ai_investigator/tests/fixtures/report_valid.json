@@ -1,0 +1,11 @@
+{
+  "findings": [
+    {"kind": "fact", "statement": "0xalice sent 50 units of 0xt to 0xbob in tx 0xtx1 at block 100", "citations": ["0xtx1"]},
+    {"kind": "estimate", "statement": "The counterparty is likely a router contract", "citations": ["0xtx1"]}
+  ],
+  "citations": [{"tx_hash": "0xtx1", "block_number": 100}],
+  "confidence": {"level": "medium", "rationale": "stored rows only; no enrichment"},
+  "alternative_explanations": ["approval followed by a swap initiated elsewhere"],
+  "missing_evidence": ["receipt status detail"],
+  "next_steps": ["watch the wallet for follow-up txs"]
+}
