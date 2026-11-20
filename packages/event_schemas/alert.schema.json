@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NexusAlertRecord",
+  "description": "Alert record contract: producers (Engines 2-5) publish on nexus:alerts; Engine 7 dispatcher validates and delivers. Facts and assessment stay separate; mempool-sourced alerts must show PENDING status.",
+  "type": "object",
+  "required": ["source_engine", "kind", "chain_id", "dedup_key", "facts"],
+  "properties": {
+    "source_engine": {"type": "string"},
+    "kind": {"type": "string"},
+    "chain_id": {"type": "integer"},
+    "title": {"type": "string"},
+    "facts": {"type": "object", "description": "tx hashes, block numbers, addresses, amounts"},
+    "assessment": {
+      "type": "object",
+      "properties": {
+        "confidence": {"type": "string"},
+        "alternatives": {"type": "array"},
+        "missing_info": {"type": "array"}
+      }
+    },
+    "dedup_key": {"type": "string"},
+    "created_at": {"type": ["string", "null"]}
+  }
+}
