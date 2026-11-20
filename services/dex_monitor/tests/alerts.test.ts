@@ -84,7 +84,7 @@ describe("liquidity-removal alerts", () => {
     expect(f.estimated_value).toContain("token0");
     expect(f.remaining_amount0).toBe("800");
     expect(f.prior_similar_actions).toBe(0);
-    expect(rec!.source).toBe("dex_monitor");
+    expect(rec!.source_engine).toBe("dex_monitor");
     expect(rec!.dedup_key).toBe(burnEvent().dedup_key);
   });
 
@@ -103,7 +103,8 @@ describe("liquidity-removal alerts", () => {
     // pretend the alerts-table row exists (store.insertAlert writes it via sink in prod;
     // FakeAlertSink bypasses store — simulate by inserting the message row)
     const rec = sink.records[0];
-    await store.insertAlert("nexus:alerts", JSON.stringify(rec));
+    await store.insertAlert({ dedupKey: rec.dedup_key, sourceEngine: rec.source_engine,
+      kind: rec.kind, chainId: rec.chain_id, destination: "nexus:alerts", message: JSON.stringify(rec) });
     const again = await maybeAlertRemoval(input(store, sink, 200n, 1000n));
     expect(again).toBeNull();
     expect(sink.records).toHaveLength(1);

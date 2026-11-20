@@ -73,26 +73,42 @@ def chains():
     return out
 
 
+def _alert_dict(r, deliveries=None):
+    return {"id": r[0], "dedup_key": r[1], "source_engine": r[2], "kind": r[3],
+            "chain_id": r[4], "record": r[5], "destination": r[6],
+            "delivery_state": r[7], "created_at": str(r[8]),
+            "deliveries": deliveries or []}
+
+
+ALERT_COLS = ("id, dedup_key, source_engine, kind, chain_id, record, "
+              "destination, delivery_state, created_at")
+
+
+def _deliveries(conn, alert_id: int):
+    rows = conn.execute(
+        "SELECT channel, state, attempts, last_error, updated_at "
+        "FROM alert_deliveries WHERE alert_id=%s", (alert_id,)).fetchall()
+    return [{"channel": r[0], "state": r[1], "attempts": r[2],
+             "last_error": r[3], "updated_at": str(r[4])} for r in rows]
+
+
 @app.get("/alerts", dependencies=[Depends(require_key)])
 def alerts(limit: int = 50):
     conn = get_conn()
     rows = conn.execute(
-        "SELECT id, destination, message, delivery_state, created_at "
-        "FROM alerts ORDER BY id DESC LIMIT %s", (limit,)).fetchall()
-    return [{"id": r[0], "destination": r[1], "message": r[2],
-             "delivery_state": r[3], "created_at": str(r[4])} for r in rows]
+        f"SELECT {ALERT_COLS} FROM alerts ORDER BY id DESC LIMIT %s",
+        (limit,)).fetchall()
+    return [_alert_dict(r, _deliveries(conn, r[0])) for r in rows]
 
 
 @app.get("/alerts/{alert_id}", dependencies=[Depends(require_key)])
 def alert(alert_id: int):
     conn = get_conn()
     r = conn.execute(
-        "SELECT id, destination, message, delivery_state, created_at FROM alerts WHERE id=%s",
-        (alert_id,)).fetchone()
+        f"SELECT {ALERT_COLS} FROM alerts WHERE id=%s", (alert_id,)).fetchone()
     if not r:
         raise HTTPException(404, "alert not found")
-    return {"id": r[0], "destination": r[1], "message": r[2],
-            "delivery_state": r[3], "created_at": str(r[4])}
+    return _alert_dict(r, _deliveries(conn, alert_id))
 
 
 class WatchlistIn(BaseModel):

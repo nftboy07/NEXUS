@@ -26,16 +26,29 @@ def pending_record(record):
 
 
 class FakeStore:
+    """In-memory DeliveryStore: alerts keyed by dedup_key, per-channel
+    states keyed by (alert_id, channel)."""
+
     def __init__(self):
-        self.states = {}
-        self.errors = {}
+        self.alerts = {}        # dedup_key -> alert_id
+        self.states = {}        # alert_id -> aggregate delivery_state
+        self.channels = {}      # (alert_id, channel) -> state
+        self._next = 1
 
-    def delivery_state(self, key):
-        return self.states.get(key)
+    def alert_id(self, rec):
+        if rec.dedup_key not in self.alerts:
+            self.alerts[rec.dedup_key] = self._next
+            self._next += 1
+        return self.alerts[rec.dedup_key]
 
-    def set_delivery_state(self, key, state, error=None):
-        self.states[key] = state
-        self.errors[key] = error
+    def channel_state(self, alert_id, channel):
+        return self.channels.get((alert_id, channel))
+
+    def set_channel_state(self, alert_id, channel, state, attempts, error=None):
+        self.channels[(alert_id, channel)] = state
+
+    def set_delivery_state(self, alert_id, state):
+        self.states[alert_id] = state
 
     def commit(self):
         pass

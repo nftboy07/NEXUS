@@ -36,7 +36,7 @@ def test_replay_end_to_end():
     # exactly one whale alert (the WETH >= 100 ETH transfer), not two
     assert len(store.alerts) == 1
     assert len(r.streams["nexus:alerts"]) == 1
-    assert "whale" in json.loads(store.alerts[0][1])["kind"]
+    assert "whale" in json.loads(store.alerts[0][2])["kind"]
 
     # profile + score for the whale recipient
     p = build_profile(store, 1, "0x0000000000000000000000000000000000000b0b")

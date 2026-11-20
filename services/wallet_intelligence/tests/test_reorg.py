@@ -46,7 +46,7 @@ def test_block_removed_invalidates():
     assert store.transfers == []
     # whale alert stays, plus one reorg_invalidation referencing it
     assert len(store.alerts) == 2
-    inv = store.alerts[1][1]
+    inv = store.alerts[1][2]
     assert "reorg_invalidation" in inv
     assert BH in inv
     assert "orphaned by reorg" in inv

@@ -24,6 +24,7 @@ class FakeConn:
         self._next_id = 1
         self.wallet_scores = {}
         self.alerts = []
+        self.deliveries = {}
         self.checkpoints = []
         self.committed = False
 
@@ -44,6 +45,8 @@ class FakeConn:
         if "FROM WALLET_SCORES" in s:
             w = self.wallet_scores.get(params[0])
             return FakeCur([w] if w else [])
+        if "FROM ALERT_DELIVERIES" in s:
+            return FakeCur(self.deliveries.get(params[0], []))
         if "FROM ALERTS WHERE ID" in s:
             return FakeCur([a for a in self.alerts if a[0] == params[0]])
         if "FROM ALERTS" in s:

@@ -97,7 +97,7 @@ class RelationHypothesis(BaseModel):
 
 
 class AlertRecord(BaseModel):
-    source: str = "wallet_intelligence"
+    source_engine: str = "wallet_intelligence"
     kind: str
     chain_id: int
     title: str

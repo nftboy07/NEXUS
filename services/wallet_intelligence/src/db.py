@@ -106,18 +106,22 @@ class PgWalletStore:
         return cur.rowcount
 
     def alert_keys_referencing(self, needle: str) -> list[str]:
-        cur = self.conn.execute("SELECT message FROM alerts WHERE message LIKE %s", (f"%{needle}%",))
+        cur = self.conn.execute("SELECT dedup_key FROM alerts WHERE dedup_key LIKE %s", (f"%{needle}%",))
         return [r[0] for r in cur.fetchall()]
 
     def has_alert(self, dedup_key: str) -> bool:
-        cur = self.conn.execute("SELECT 1 FROM alerts WHERE message LIKE %s LIMIT 1", (f"%{dedup_key}%",))
+        cur = self.conn.execute("SELECT 1 FROM alerts WHERE dedup_key = %s LIMIT 1", (dedup_key,))
         return cur.fetchone() is not None
 
-    def insert_alert(self, destination: str, message: str) -> None:
-        self.conn.execute(
-            "INSERT INTO alerts (destination, message, delivery_state) VALUES (%s,%s,'pending')",
-            (destination, message),
+    def insert_alert(self, rec, message: str) -> bool:
+        """Insert with identity columns; False when dedup_key already existed."""
+        cur = self.conn.execute(
+            "INSERT INTO alerts (dedup_key, source_engine, kind, chain_id, record, destination, message, delivery_state) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,'pending') "
+            "ON CONFLICT (dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING",
+            (rec.dedup_key, rec.source_engine, rec.kind, rec.chain_id, message, "nexus:alerts", message),
         )
+        return cur.rowcount > 0
 
     def upsert_score(self, address, chain_id, score, coverage, components) -> None:
         import json

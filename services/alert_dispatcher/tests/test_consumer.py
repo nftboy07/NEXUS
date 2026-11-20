@@ -12,7 +12,7 @@ class OkChannel:
 def test_valid_record_delivered(record, store, log):
     fields = {"record": json.dumps(record.model_dump())}
     assert process_record(fields, store, [OkChannel()], log) is True
-    assert store.states[record.dedup_key] == "sent"
+    assert store.states[store.alert_id(record)] == "sent"
 
 
 def test_malformed_parked_not_crashed(store, log):

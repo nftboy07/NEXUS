@@ -162,10 +162,12 @@ export class FakeDexStore implements DexStore {
     return this.txSenders.get(`${chainId}:${txHash}`) ?? null;
   }
   async hasAlert(dedupKey: string): Promise<boolean> {
-    return this.alerts.some((a) => a.message.includes(dedupKey));
+    return this.alerts.some((a) => a.dedupKey === dedupKey);
   }
-  async insertAlert(destination: string, message: string): Promise<void> {
-    this.alerts.push({ destination, message });
+  async insertAlert(record: { dedupKey: string; sourceEngine: string; kind: string; chainId: number; destination: string; message: string }): Promise<boolean> {
+    if (await this.hasAlert(record.dedupKey)) return false;
+    this.alerts.push({ dedupKey: record.dedupKey, destination: record.destination, message: record.message });
+    return true;
   }
   async close(): Promise<void> {}
 }

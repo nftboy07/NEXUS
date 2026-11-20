@@ -25,16 +25,15 @@ class AlertSink:
 
     def emit(self, rec: AlertRecord) -> bool:
         """Write the alert once per dedup_key. Returns True when emitted."""
-        if self.store.has_alert(rec.dedup_key):
+        message = rec.model_dump_json()
+        if not self.store.insert_alert(rec, message):
             self.log.info("alert already emitted", extra={"dedup_key": rec.dedup_key})
             return False
-        message = rec.model_dump_json()
-        self.store.insert_alert(ALERTS_DESTINATION, message)
         self.redis.xadd(
             ALERTS_STREAM,
             {
                 "dedup_key": rec.dedup_key,
-                "source": rec.source,
+                "source_engine": rec.source_engine,
                 "kind": rec.kind,
                 "chain_id": str(rec.chain_id),
                 "record": message,

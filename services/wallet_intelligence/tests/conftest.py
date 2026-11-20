@@ -57,7 +57,7 @@ class FakeStore:
         return before - len(self.transfers)
 
     def alert_keys_referencing(self, needle):
-        return [m for _, m in self.alerts if needle in m]
+        return [k for k, _, _ in self.alerts if needle in k]
 
     def get_wallet_label(self, address):
         w = self.wallets.get(address.lower())
@@ -70,10 +70,13 @@ class FakeStore:
         return self.pools
 
     def has_alert(self, dedup_key):
-        return any(dedup_key in m for _, m in self.alerts)
+        return any(k == dedup_key for k, _, _ in self.alerts)
 
-    def insert_alert(self, destination, message):
-        self.alerts.append((destination, message))
+    def insert_alert(self, rec, message):
+        if self.has_alert(rec.dedup_key):
+            return False
+        self.alerts.append((rec.dedup_key, "nexus:alerts", message))
+        return True
 
     def upsert_score(self, address, chain_id, score, coverage, components):
         self.scores[(address, chain_id)] = {"score": score, "coverage": coverage, "components": components}

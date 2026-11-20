@@ -55,7 +55,8 @@ export interface DexStore {
   /** tx sender from Engine 1's transactions table, if populated */
   getTransactionSender(chainId: number, txHash: string): Promise<string | null>;
   hasAlert(dedupKey: string): Promise<boolean>;
-  insertAlert(destination: string, message: string): Promise<void>;
+  /** Returns true when the row was inserted (dedup_key did not exist). */
+  insertAlert(record: { dedupKey: string; sourceEngine: string; kind: string; chainId: number; destination: string; message: string }): Promise<boolean>;
   /** Delete rows derived from an orphaned block (reorg propagation). */
   deleteByBlock(chainId: number, blockHash: string): Promise<void>;
   close(): Promise<void>;
@@ -181,8 +182,8 @@ export class PgDexStore implements DexStore {
 
   async hasAlert(dedupKey: string): Promise<boolean> {
     const res = await this.pool.query(
-      `SELECT 1 FROM alerts WHERE message LIKE $1 LIMIT 1`,
-      [`%${dedupKey}%`]
+      `SELECT 1 FROM alerts WHERE dedup_key = $1 LIMIT 1`,
+      [dedupKey]
     );
     return res.rows.length > 0;
   }
@@ -193,11 +194,14 @@ export class PgDexStore implements DexStore {
     }
   }
 
-  async insertAlert(destination: string, message: string): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO alerts (destination, message, delivery_state) VALUES ($1,$2,'pending')`,
-      [destination, message]
+  async insertAlert(record: { dedupKey: string; sourceEngine: string; kind: string; chainId: number; destination: string; message: string }): Promise<boolean> {
+    const res = await this.pool.query(
+      `INSERT INTO alerts (dedup_key, source_engine, kind, chain_id, record, destination, message, delivery_state)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'pending')
+       ON CONFLICT (dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING`,
+      [record.dedupKey, record.sourceEngine, record.kind, record.chainId, record.message, record.destination, record.message]
     );
+    return (res.rowCount ?? 0) > 0;
   }
 
   async close(): Promise<void> {

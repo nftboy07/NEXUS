@@ -9,7 +9,7 @@ def test_skips_unconfigured_and_processes_others(record, store, log):
     # no telegram token -> skipped_no_config, no exception, discord also skipped
     outcome = deliver(record, "msg", store, [TelegramChannel(log), DiscordChannel(log)], log)
     assert outcome == "skipped_no_config"
-    assert store.states[record.dedup_key] == "skipped_no_config"
+    assert store.states[store.alert_id(record)] == "skipped_no_config"
 
 
 class FailingChannel:
@@ -35,8 +35,28 @@ def test_retry_bounded_and_other_channels_still_deliver(record, store, log, monk
     assert ch.calls == 3  # bounded
 
 
-def test_dedup_skips_redelivery(record, store, log):
-    store.states[record.dedup_key] = "sent"
-    ch = OkChannel()
-    outcome = deliver(record, "msg", store, [ch], log)
-    assert outcome == "sent"  # short-circuits on stored state
+def test_sent_channel_never_resent(record, store, log):
+    aid = store.alert_id(record)
+    store.channels[(aid, "ok")] = "sent"
+    outcome = deliver(record, "msg", store, [OkChannel()], log)
+    assert outcome == "sent"
+    # already-sent channel short-circuits before send()
+
+
+class CountingChannel:
+    name = "counting"
+    def __init__(self):
+        self.calls = 0
+    def send(self, msg, rec):
+        self.calls += 1
+        return "sent"
+
+
+def test_substring_dedup_keys_both_delivered(record, store, log):
+    """Keys where one is a substring of the other are distinct rows."""
+    other = record.model_copy(update={"dedup_key": record.dedup_key + ":extra"})
+    ch = CountingChannel()
+    assert deliver(record, "m", store, [ch], log) == "sent"
+    assert deliver(other, "m", store, [ch], log) == "sent"
+    assert ch.calls == 2
+    assert store.alerts[record.dedup_key] != store.alerts[other.dedup_key]

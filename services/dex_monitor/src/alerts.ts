@@ -9,7 +9,7 @@ import type { DexStore, PoolRow } from "./store.js";
 export const ALERTS_STREAM = "nexus:alerts";
 
 export interface AlertRecord {
-  source: "dex_monitor";
+  source_engine: "dex_monitor";
   kind: "liquidity_removal";
   chain_id: number;
   dedup_key: string;
@@ -44,10 +44,18 @@ export class DbStreamAlertSink implements AlertSink {
 
   async emit(record: AlertRecord): Promise<void> {
     const message = JSON.stringify(record);
-    await this.store.insertAlert("nexus:alerts", message);
+    const inserted = await this.store.insertAlert({
+      dedupKey: record.dedup_key,
+      sourceEngine: record.source_engine,
+      kind: record.kind,
+      chainId: record.chain_id,
+      destination: "nexus:alerts",
+      message,
+    });
+    if (!inserted) return; // unique dedup_key — already alerted
     await this.xadd(ALERTS_STREAM, {
       dedup_key: record.dedup_key,
-      source: record.source,
+      source: record.source_engine,
       kind: record.kind,
       chain_id: String(record.chain_id),
       record: message,
@@ -90,7 +98,7 @@ export async function maybeAlertRemoval(input: RemovalAlertInput): Promise<Alert
     : 0;
 
   const record: AlertRecord = {
-    source: "dex_monitor",
+    source_engine: "dex_monitor",
     kind: "liquidity_removal",
     chain_id: ev.chain_id,
     dedup_key: ev.dedup_key,

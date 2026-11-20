@@ -30,8 +30,6 @@ def emit_finding_alert(store, redis_xadd, f: Finding, log: logging.Logger) -> bo
     if f.confidence.level != "high":
         return False
     dedup_key = f"mev_analyzer:{f.kind}:{f.evidence[0]['tx_hash']}"
-    if store.has_alert(dedup_key):
-        return False
     record = {
         "source_engine": "mev_analyzer",
         "kind": f.kind,
@@ -42,7 +40,8 @@ def emit_finding_alert(store, redis_xadd, f: Finding, log: logging.Logger) -> bo
         "dedup_key": dedup_key,
     }
     import json
-    store.insert_alert(ALERTS_DESTINATION, json.dumps(record))
+    if not store.insert_alert(record, json.dumps(record)):
+        return False
     if redis_xadd is not None:
         redis_xadd("nexus:alerts", {k: json.dumps(v) if isinstance(v, (dict, list)) else str(v)
                                   for k, v in record.items()})

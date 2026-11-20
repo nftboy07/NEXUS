@@ -90,14 +90,19 @@ class PgMevStore:
              f.confidence.model_dump_json()))
         return cur.rowcount > 0
 
-    def insert_alert(self, destination, message):
-        self.conn.execute(
-            "INSERT INTO alerts (destination, message, delivery_state) VALUES (%s,%s,'pending')",
-            (destination, message))
+    def insert_alert(self, record: dict, message):
+        """Insert with identity columns; False when dedup_key already existed."""
+        cur = self.conn.execute(
+            "INSERT INTO alerts (dedup_key, source_engine, kind, chain_id, record, destination, message, delivery_state) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,'pending') "
+            "ON CONFLICT (dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING",
+            (record["dedup_key"], record["source_engine"], record["kind"],
+             record["chain_id"], message, ALERTS_DESTINATION, message))
+        return cur.rowcount > 0
 
     def has_alert(self, dedup_key):
         cur = self.conn.execute(
-            "SELECT 1 FROM alerts WHERE message LIKE %s LIMIT 1", (f"%{dedup_key}%",))
+            "SELECT 1 FROM alerts WHERE dedup_key = %s LIMIT 1", (dedup_key,))
         return cur.fetchone() is not None
 
     def commit(self):
