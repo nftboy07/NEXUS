@@ -112,7 +112,7 @@ sleep 20
 CP_A=$(psql_ "SELECT last_block FROM checkpoints WHERE chain_id=1")
 sleep 25
 CP_B=$(psql_ "SELECT last_block FROM checkpoints WHERE chain_id=1")
-ERR=$(docker compose logs evm_listener_broken 2>&1 | grep -ci "error\|fail" || true)
+ERR=$(docker logs evm_listener_broken 2>&1 | grep -ci "error\|fail" || true)
 if [ -n "$CP_A" ] && [ -n "$CP_B" ] && [ "$CP_B" -gt "$CP_A" ]; then
   pass "chain 1 advanced with Base dead"
 else
