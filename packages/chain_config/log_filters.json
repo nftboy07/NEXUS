@@ -4,6 +4,65 @@
       "name": "erc20_transfer",
       "kind": "event",
       "event": "event Transfer(address indexed from, address indexed to, uint256 value)"
+    },
+    {
+      "name": "univ2_factory_pair_created",
+      "kind": "event",
+      "event": "event PairCreated(address indexed token0, address indexed token1, address pair, uint256)",
+      "address": [
+        "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
+        "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac"
+      ]
+    },
+    {
+      "name": "univ3_factory_pool_created",
+      "kind": "event",
+      "event": "event PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)",
+      "address": [
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        "0x33128a8fC17869897dcE68Ed026d694621f6FDfD"
+      ]
+    },
+    {
+      "name": "aerodrome_pool_created",
+      "kind": "event",
+      "event": "event PoolCreated(address indexed token0, address indexed token1, bool indexed stable, address pool, uint256)",
+      "address": ["0x420DD381b31aEf6683db6B902084cB0FFECe40Da"]
+    },
+    {
+      "name": "dex_v2_mint",
+      "kind": "event",
+      "event": "event Mint(address indexed sender, uint256 amount0, uint256 amount1)"
+    },
+    {
+      "name": "dex_v2_burn",
+      "kind": "event",
+      "event": "event Burn(address indexed sender, uint256 amount0, uint256 amount1, address indexed to)"
+    },
+    {
+      "name": "dex_v2_swap",
+      "kind": "event",
+      "event": "event Swap(address indexed sender, uint256 amount0In, uint256 amount1In, uint256 amount0Out, uint256 amount1Out, address indexed to)"
+    },
+    {
+      "name": "dex_v2_sync",
+      "kind": "event",
+      "event": "event Sync(uint112 reserve0, uint112 reserve1)"
+    },
+    {
+      "name": "dex_v3_mint",
+      "kind": "event",
+      "event": "event Mint(address sender, address indexed owner, int24 indexed tickLower, int24 indexed tickUpper, uint128 amount, uint256 amount0, uint256 amount1)"
+    },
+    {
+      "name": "dex_v3_burn",
+      "kind": "event",
+      "event": "event Burn(address indexed owner, int24 indexed tickLower, int24 indexed tickUpper, uint128 amount, uint256 amount0, uint256 amount1)"
+    },
+    {
+      "name": "dex_v3_swap",
+      "kind": "event",
+      "event": "event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)"
     }
   ]
 }

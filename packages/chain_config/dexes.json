@@ -1,0 +1,44 @@
+{
+  "dexes": [
+    {
+      "chain_id": 1,
+      "name": "uniswap_v2",
+      "type": "v2",
+      "factory": "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
+      "router": "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
+      "address_source": "docs.uniswap.org — Uniswap V2 factory + Router02 mainnet deployments"
+    },
+    {
+      "chain_id": 1,
+      "name": "uniswap_v3",
+      "type": "v3",
+      "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+      "router": "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+      "address_source": "docs.uniswap.org — Uniswap V3 factory + SwapRouter mainnet deployments"
+    },
+    {
+      "chain_id": 1,
+      "name": "sushiswap",
+      "type": "v2",
+      "factory": "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac",
+      "router": "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F",
+      "address_source": "SushiSwap docs / canonical mainnet factory + router deployments"
+    },
+    {
+      "chain_id": 8453,
+      "name": "uniswap_v3",
+      "type": "v3",
+      "factory": "0x33128a8fC17869897dcE68Ed026d694621f6FDfD",
+      "router": "0x2626664c2603336E57B271c5C0b26F421741e481",
+      "address_source": "docs.uniswap.org — Uniswap V3 factory + SwapRouter02 Base deployments"
+    },
+    {
+      "chain_id": 8453,
+      "name": "aerodrome",
+      "type": "aerodrome",
+      "factory": "0x420DD381b31aEf6683db6B902084cB0FFECe40Da",
+      "router": "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43",
+      "address_source": "aerodrome.finance docs — PoolFactory + Router Base deployments"
+    }
+  ]
+}
