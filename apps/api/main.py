@@ -32,12 +32,13 @@ def set_conn(conn) -> None:
 
 def get_conn():
     global _db_conn
-    if _db_conn is not None:
+    if _db_conn is not None and not getattr(_db_conn, "closed", False):
         return _db_conn
     url = os.getenv("DATABASE_URL")
     if not url:
         raise HTTPException(503, "DATABASE_URL not configured")
-    _db_conn = psycopg.connect(url)
+    # autocommit: a failed query must not leave the shared connection in an aborted transaction
+    _db_conn = psycopg.connect(url, autocommit=True)
     return _db_conn
 
 
@@ -161,8 +162,10 @@ def wallet(address: str):
 def events(chain_id: int, limit: int = 50):
     conn = get_conn()
     rows = conn.execute(
-        "SELECT tx_hash, block_number, address FROM logs WHERE chain_id=%s "
-        "AND removed=FALSE ORDER BY block_number DESC LIMIT %s",
+        "SELECT l.transaction_hash, b.number, l.contract FROM logs l "
+        "LEFT JOIN blocks b ON b.chain_id = l.chain_id AND b.hash = l.block_hash "
+        "WHERE l.chain_id=%s AND l.removed=FALSE "
+        "ORDER BY b.number DESC NULLS LAST, l.log_index DESC LIMIT %s",
         (chain_id, limit)).fetchall()
     return [{"tx_hash": r[0], "block_number": r[1], "address": r[2]} for r in rows]
 

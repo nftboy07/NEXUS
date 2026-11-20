@@ -53,3 +53,11 @@ def test_system_health(client, conn):
 
 def test_system_health_requires_auth(client):
     assert client.get("/system/health").status_code == 401
+
+
+def test_events_uses_logs_schema_columns(client, conn):
+    r = client.get("/events?chain_id=1&limit=5", headers=AUTH)
+    assert r.status_code == 200
+    sql = next(q for q, _ in conn.queries if "FROM LOGS" in q.upper())
+    assert "transaction_hash" in sql and "contract" in sql
+    assert "tx_hash" not in sql and "l.block_number" not in sql
