@@ -1,0 +1,47 @@
+{
+  "provenance": "synthetic fixture — see README.md",
+  "blocks": [
+    {
+      "number": 100,
+      "hash": "0xbfec4e2345313c96d8dda9d51ac675c71c0745e34fe2a1d3b0f787acbf768598",
+      "parentHash": "0x500d3aa426c64829a301a000462bbefe4bd2e87c4c709a80b1569383c1f95cb3",
+      "timestamp": 1700001200
+    },
+    {
+      "number": 101,
+      "hash": "0x1436e1b0556284f0ebd6de7bb522efefee583472c9b506e0d6256e28838374a3",
+      "parentHash": "0xbfec4e2345313c96d8dda9d51ac675c71c0745e34fe2a1d3b0f787acbf768598",
+      "timestamp": 1700001212
+    },
+    {
+      "number": 102,
+      "hash": "0x35a2b5fb7d818dd6e941a2433e742700323c3cd01d6346dac8e49c1aa9e8b814",
+      "parentHash": "0x1436e1b0556284f0ebd6de7bb522efefee583472c9b506e0d6256e28838374a3",
+      "timestamp": 1700001224
+    },
+    {
+      "number": 103,
+      "hash": "0x0ba7a5767803b0dd93225bb13f7a2a21a4b4cd168c3f8451cc773e0c7042754d",
+      "parentHash": "0x35a2b5fb7d818dd6e941a2433e742700323c3cd01d6346dac8e49c1aa9e8b814",
+      "timestamp": 1700001236
+    },
+    {
+      "number": 104,
+      "hash": "0xdd961ac8a96a03924ecd56944b8715cd68824bdfa04b09352bdfab800e1f5b37",
+      "parentHash": "0x0ba7a5767803b0dd93225bb13f7a2a21a4b4cd168c3f8451cc773e0c7042754d",
+      "timestamp": 1700001248
+    },
+    {
+      "number": 105,
+      "hash": "0x034d0be2ea2da3d968ccaee4a1dcbf0f82c9bf4e3444a5a86f06c7047990a8f9",
+      "parentHash": "0xdd961ac8a96a03924ecd56944b8715cd68824bdfa04b09352bdfab800e1f5b37",
+      "timestamp": 1700001260
+    },
+    {
+      "number": 106,
+      "hash": "0xfe382ebef67944fda2037f2963279bf7c89936b3572c502f28a6fb14b3f4ef90",
+      "parentHash": "0x034d0be2ea2da3d968ccaee4a1dcbf0f82c9bf4e3444a5a86f06c7047990a8f9",
+      "timestamp": 1700001272
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@nexus/event-schemas",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "types": "./types.ts",
+  "exports": {
+    ".": "./types.ts",
+    "./schema.json": "./event.schema.json"
+  }
+}

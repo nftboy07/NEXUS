@@ -17,5 +17,15 @@ services:
       REDIS_URL: redis://redis:6379
     ports: ["8000:8000"]
     depends_on: [postgres, redis]
+  evm_listener:
+    build:
+      context: .
+      dockerfile: services/evm_listener/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
+      REDIS_URL: redis://redis:6379
+    depends_on: [postgres, redis]
+    restart: unless-stopped
 volumes:
   nexus_pg:

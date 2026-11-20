@@ -1,0 +1,50 @@
+{
+  "provenance": "synthetic fixture — see README.md",
+  "logs": [
+    {
+      "address": "0x1111111111111111111111111111111111111111",
+      "blockHash": "0x0ba7a5767803b0dd93225bb13f7a2a21a4b4cd168c3f8451cc773e0c7042754d",
+      "blockNumber": 103,
+      "transactionHash": "0x323b8a18cb8ae56c895c5175c8f06b0d7982f4d692adca62e919d1ca0998fe7c",
+      "logIndex": 0,
+      "data": "0x0000000000000000000000000000000000000000000000000000000000000005",
+      "topics": [
+        "0x81ec0ebf90235d6d2f88804e74130e2a76b2d190a21de861aa49d92f3cbc0347",
+        "0x77baff6d1bc07f86898aebf3cd9e2bf492bafcd2b2260504d69664ca94ee77ce",
+        "0x6d8109b2c69b824ecee600115ab9f802f3126d1f746b058c6fbf9840eb81c57f"
+      ],
+      "transactionIndex": 0,
+      "removed": false
+    },
+    {
+      "address": "0x1111111111111111111111111111111111111111",
+      "blockHash": "0x0ba7a5767803b0dd93225bb13f7a2a21a4b4cd168c3f8451cc773e0c7042754d",
+      "blockNumber": 103,
+      "transactionHash": "0xc0fc6e8d9e8d06607fa1f25a76c0d11509fd155865b1cf24682a228fe5d962d5",
+      "logIndex": 1,
+      "data": "0x0000000000000000000000000000000000000000000000000000000000000005",
+      "topics": [
+        "0x81ec0ebf90235d6d2f88804e74130e2a76b2d190a21de861aa49d92f3cbc0347",
+        "0x77baff6d1bc07f86898aebf3cd9e2bf492bafcd2b2260504d69664ca94ee77ce",
+        "0x6d8109b2c69b824ecee600115ab9f802f3126d1f746b058c6fbf9840eb81c57f"
+      ],
+      "transactionIndex": 0,
+      "removed": false
+    },
+    {
+      "address": "0x1111111111111111111111111111111111111111",
+      "blockHash": "0xdd961ac8a96a03924ecd56944b8715cd68824bdfa04b09352bdfab800e1f5b37",
+      "blockNumber": 104,
+      "transactionHash": "0x5eb5d2b4b07a93bf040605d6a84bb6fc3e98335bbd131333d42b531b911e7e72",
+      "logIndex": 0,
+      "data": "0x0000000000000000000000000000000000000000000000000000000000000005",
+      "topics": [
+        "0x81ec0ebf90235d6d2f88804e74130e2a76b2d190a21de861aa49d92f3cbc0347",
+        "0x77baff6d1bc07f86898aebf3cd9e2bf492bafcd2b2260504d69664ca94ee77ce",
+        "0x6d8109b2c69b824ecee600115ab9f802f3126d1f746b058c6fbf9840eb81c57f"
+      ],
+      "transactionIndex": 0,
+      "removed": false
+    }
+  ]
+}
