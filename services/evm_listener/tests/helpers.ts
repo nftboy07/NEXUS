@@ -32,6 +32,15 @@ export class FakeStore implements EventStore {
   txs = new Map<string, StoredTransaction>(); // key: chainId:hash
   checkpoints = new Map<number, Checkpoint>();
   healthRows: Array<{ provider: string; chainId: number; latencyMs: number; errors: number }> = [];
+  watchlist: string[] = [];
+  pools: string[] = [];
+
+  async watchlistWallets(): Promise<string[]> {
+    return this.watchlist;
+  }
+  async poolAddresses(chainId: number): Promise<string[]> {
+    return this.pools;
+  }
 
   async upsertBlock(b: StoredBlock): Promise<UpsertResult> {
     const k = `${b.chainId}:${b.hash}`;
@@ -187,13 +196,16 @@ export function makeBlocks(from: bigint, to: bigint): SourceBlock[] {
 
 /** viem-shaped client facades over a ChainSource for ChainRunner tests. */
 export function fakeClients(source: ChainSource) {
-  const captured: { onBlock?: (b: SourceBlock) => void } = {};
+  const captured: { onBlock?: (b: SourceBlock) => void; watchEvents?: number } = {};
   const ws = {
     watchBlocks: (args: { onBlock: (b: unknown) => void }) => {
       captured.onBlock = args.onBlock as (b: SourceBlock) => void;
       return () => {};
     },
-    watchEvent: () => () => {},
+    watchEvent: (args: unknown) => {
+      captured.watchEvents = (captured.watchEvents ?? 0) + 1;
+      return () => {};
+    },
   };
   const http = {
     getBlockNumber: () => source.getBlockNumber(),

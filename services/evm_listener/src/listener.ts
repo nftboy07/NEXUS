@@ -8,7 +8,9 @@ import { createClient } from "redis";
 import { createLogger } from "@nexus/shared-utils";
 import { loadChainConfigs } from "./config.js";
 import { createChainClients } from "./rpc.js";
+import { readFileSync } from "node:fs";
 import { loadLogFilters, parseLogFilters } from "./subscriptions.js";
+import { buildScopedFilters, type DexEntry, type TokenEntry } from "./scopedFilters.js";
 import { PgStore } from "./store.js";
 import { RedisPublisher } from "./publisher.js";
 import { runChains } from "./runner.js";
@@ -21,8 +23,15 @@ async function main() {
     log.warn("no enabled chains configured — check .env");
     return;
   }
-  const filters = parseLogFilters(loadLogFilters());
-  log.info("loaded log filters", { filters: filters.map((f) => f.name) });
+  const baseFilters = parseLogFilters(loadLogFilters());
+  const filterMode = (process.env.LOG_FILTER_MODE ?? "scoped").toLowerCase();
+  log.info("loaded log filters", { filters: baseFilters.map((f) => f.name), mode: filterMode });
+  const tokens = (JSON.parse(readFileSync(
+    new URL("../../packages/chain_config/tokens.json", import.meta.url), "utf8")) as { tokens: TokenEntry[] }).tokens;
+  const dexes = (JSON.parse(readFileSync(
+    new URL("../../packages/chain_config/dexes.json", import.meta.url), "utf8")) as { dexes: DexEntry[] }).dexes;
+  const maxFilterAddresses = Number(process.env.MAX_FILTER_ADDRESSES ?? 100);
+  const filterRefreshSeconds = Number(process.env.FILTER_REFRESH_SECONDS ?? 60);
 
   const databaseUrl = process.env.DATABASE_URL;
   const redisUrl = process.env.REDIS_URL;
@@ -39,7 +48,7 @@ async function main() {
   const runners = await runChains(
     chains.map((chain) => ({
       chain,
-      filters,
+      filters: baseFilters,
       store,
       publisher,
       log,
@@ -48,6 +57,19 @@ async function main() {
       startBackfillBlocks: Number(process.env.START_BACKFILL_BLOCKS ?? 50),
       ingestTransactions: (process.env.INGEST_TRANSACTIONS ?? "true") !== "false",
       heartbeatTimeoutMs: Number(process.env.HEARTBEAT_TIMEOUT_MS ?? 60_000),
+      filterRefresh: filterMode === "scoped"
+        ? {
+            intervalSeconds: filterRefreshSeconds,
+            build: async () => buildScopedFilters(baseFilters, {
+              chainId: chain.id,
+              tokens: tokens.filter((t) => t.chain_id === chain.id),
+              watchWallets: await store.watchlistWallets(),
+              pools: await store.poolAddresses(chain.id),
+              dexes: dexes.filter((d) => d.chain_id === chain.id),
+              maxAddresses: maxFilterAddresses,
+            }),
+          }
+        : undefined,
     })),
     (chain, err) => log.error("chain failed to start — continuing with others", { chain: chain.name, err: String(err) })
   );

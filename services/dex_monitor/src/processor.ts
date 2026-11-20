@@ -22,6 +22,7 @@ export interface DexEntry {
   factory: string;
   router: string;
   address_source: string;
+  pinned_pools?: { address: string; pair: string; derivation: string }[];
 }
 
 export function loadDexes(url: URL = DEXES_URL): DexEntry[] {

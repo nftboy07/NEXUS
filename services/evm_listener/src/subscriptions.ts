@@ -18,7 +18,11 @@ export interface ParsedLogFilter {
   name: string;
   abiEvent: AbiEvent;
   address?: string | string[];
-  topics: string[][];
+  /** Positional topic lists; null = wildcard for that position (used by
+   * scoped topic1/topic2 filters). */
+  topics: (string[] | null)[];
+  /** viem watchEvent args (indexed inputs) for topic-scoped WS filters. */
+  args?: Record<string, string | string[]>;
 }
 
 export function loadLogFilters(url: URL = LOG_FILTERS_URL): LogFilterEntry[] {
@@ -33,7 +37,7 @@ export function parseLogFilters(entries: LogFilterEntry[]): ParsedLogFilter[] {
   });
 }
 
-function eventTopics(event: AbiEvent): string[][] {
+function eventTopics(event: AbiEvent): (string[] | null)[] {
   // topic[0] = event signature hash; indexed args are wildcards for a plain subscription
   const sig = `${event.name}(${event.inputs.map((i) => i.type).join(",")})`;
   return [[signatureHash(sig)]];
@@ -82,6 +86,7 @@ export function watchLogs(ws: PublicClient, filters: ParsedLogFilter[], cb: Subs
     sub.unwatch = ws.watchEvent({
       events: [f.abiEvent],
       address: f.address as never,
+      args: f.args as never,
       onLogs: (logs) => {
         sub.lastMessageAt = Date.now();
         void cb.onLogs(

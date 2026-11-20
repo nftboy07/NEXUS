@@ -85,6 +85,30 @@ async function main() {
   };
   const discovery = new LazyPoolDiscovery(caller, factoriesPerChain);
 
+  // Seed pinned pools (dexes.json) with discovery "pinned" via the same
+  // factory()/token0()/token1() probe as lazy discovery, so scoped log
+  // filters + downstream queries see them from first boot.
+  for (const id of chainIds) {
+    for (const dex of dexes.filter((d) => d.chain_id === id)) {
+      for (const pinned of dex.pinned_pools ?? []) {
+        try {
+          const info = await discovery.discover(id, pinned.address);
+          if (!info) {
+            log.warn("pinned pool probe failed; skipped (will lazy-discover on first event)",
+              { chain_id: id, pool: pinned.address, derivation: pinned.derivation });
+            continue;
+          }
+          await registry.registerLazy(pinned.address, info,
+            { chain_id: id, block_number: null, tx_hash: null, block_hash: null } as never,
+            "pinned");
+          log.info("pinned pool registered", { chain_id: id, pool: pinned.address, dex: info.dex });
+        } catch (e) {
+          log.warn("pinned pool registration failed", { pool: pinned.address, err: String(e) });
+        }
+      }
+    }
+  }
+
   const processor = new DexProcessor({
     store,
     registry,

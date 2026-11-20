@@ -71,3 +71,20 @@ npm test
 Fixture-backed vitest suite under `tests/` covers dedup, normalization,
 backfill gaps, reorg rewind, and per-chain isolation. Fixture provenance:
 `tests/fixtures/README.md` (synthetic — not real on-chain data).
+
+## Scoped vs full filters
+
+`LOG_FILTER_MODE` (default `scoped`):
+- **scoped** — ERC-20 Transfer on `packages/chain_config/tokens.json`
+  allowlist (every address verified on-chain: `symbol()` + `decimals()`);
+  Transfer with a watchlist wallet in topic1 or topic2 (watchlists
+  table, `kind='wallet'`); DEX Mint/Burn/Swap/Sync on factories +
+  pinned pools (`dexes.json`) + all rows in `pools`. Factory
+  PoolCreated subscriptions are unchanged.
+- **full** — the original unscoped subscriptions (free-RPC-unfriendly).
+
+Every `FILTER_REFRESH_SECONDS` (60) the derived filter set is re-read
+from the DB; on change the WS watchers resubscribe and backfill runs
+from the checkpoint — new addresses get covered from then on; earlier
+history is NOT backfilled. Filters chunk at `MAX_FILTER_ADDRESSES`
+(100).

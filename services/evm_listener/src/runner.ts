@@ -12,6 +12,7 @@ import type { ParsedLogFilter } from "./subscriptions.js";
 import { heartbeatStaleMs, watchBlocks, watchLogs, type Subscription } from "./subscriptions.js";
 import { backfillRange, fetchLogs } from "./backfill.js";
 import { resolveReorg } from "./reorg.js";
+import { filterFingerprint } from "./scopedFilters.js";
 import { advanceCheckpoint, readCheckpoint } from "./checkpoint.js";
 import { ingestBlock, ingestLogs, ingestTransactions } from "./ingest.js";
 import { HealthReporter } from "./health.js";
@@ -31,6 +32,10 @@ export interface RunnerDeps {
   startBackfillBlocks?: number;
   /** Fetch tx+receipt rows for log tx hashes (INGEST_TRANSACTIONS, default true). */
   ingestTransactions?: boolean;
+  /** Scoped-filter refresh: rebuild filters from watchlists/pools every
+   * intervalSeconds; resubscribes + backfills from checkpoint on change.
+   * Absent = static filters (LOG_FILTER_MODE=full behaviour). */
+  filterRefresh?: { build: () => Promise<ParsedLogFilter[]>; intervalSeconds: number };
 }
 
 const DEFAULT_HEARTBEAT_MS = 60_000;
@@ -40,12 +45,14 @@ export class ChainRunner {
   private health: HealthReporter;
   private stopped = false;
   private processing: Promise<void> = Promise.resolve();
+  private activeFilters: ParsedLogFilter[];
   readonly state: ProviderState;
   readonly deps: RunnerDeps;
   private log: Logger;
 
   constructor(deps: RunnerDeps) {
     this.deps = deps;
+    this.activeFilters = deps.filters;
     this.log = deps.log.child({ chain: deps.chain.name, chain_id: deps.chain.id });
     this.state = { active: deps.clients.primary, outages: 0, reconnects: 0 };
     this.health = new HealthReporter({
@@ -90,15 +97,20 @@ export class ChainRunner {
       await this.deps.store.setCheckpoint(this.deps.chain.id, seed, null);
       this.log.info("cold start: checkpoint seeded", { head: head.toString(), seed: seed.toString() });
     }
+    if (this.deps.filterRefresh) {
+      this.activeFilters = await this.deps.filterRefresh.build();
+      this.log.info("scoped log filters built", { count: this.activeFilters.length });
+    }
     const cp = await readCheckpoint(this.deps.store, this.deps.chain.id);
     if (head > cp.lastBlock) {
-      await backfillRange(this.source(), this.deps.filters, this.ingest(), head, {
+      await backfillRange(this.source(), this.activeFilters, this.ingest(), head, {
         chunkSize: this.deps.chunkSize,
       });
     }
     this.subscribe();
     this.health.start();
     this.startHeartbeatWatch();
+    this.startFilterRefresh();
   }
 
   private subscribe(): void {
@@ -112,7 +124,7 @@ export class ChainRunner {
         this.enqueue(() => this.recover());
       },
     };
-    this.subs = [watchBlocks(this.state.active.ws, cb), ...watchLogs(this.state.active.ws, this.deps.filters, cb)];
+    this.subs = [watchBlocks(this.state.active.ws, cb), ...watchLogs(this.state.active.ws, this.activeFilters, cb)];
     this.log.info("subscriptions active", { provider: this.state.active.role, subs: this.subs.map((s) => s.name) });
   }
 
@@ -141,7 +153,7 @@ export class ChainRunner {
       });
     if (reorg.reorged && reorg.ancestor !== undefined) {
       // Reprocess the canonical range from the common ancestor forward.
-      await backfillRange(this.source(), this.deps.filters, this.ingest(), block.number, {
+      await backfillRange(this.source(), this.activeFilters, this.ingest(), block.number, {
         chunkSize: this.deps.chunkSize,
       });
       return;
@@ -155,7 +167,7 @@ export class ChainRunner {
         checkpoint: cp.lastBlock.toString(),
         head: block.number.toString(),
       });
-      await backfillRange(this.source(), this.deps.filters, this.ingest(), block.number, {
+      await backfillRange(this.source(), this.activeFilters, this.ingest(), block.number, {
         chunkSize: this.deps.chunkSize,
       });
       return;
@@ -164,7 +176,7 @@ export class ChainRunner {
     // Reconcile this block's logs via HTTP — dedup makes it free when the
     // live subscription already delivered them. Checkpoint only advances
     // after the block's events are stored AND published.
-    const logs = await fetchLogs(this.source(), this.deps.filters, block.number, block.number, this.log);
+    const logs = await fetchLogs(this.source(), this.activeFilters, block.number, block.number, this.log);
     await ingestLogs(logs, this.ingest());
     await ingestTransactions(logs, this.source(), this.ingest());
     await advanceCheckpoint(this.deps.store, chain.id, block.number, null);
@@ -211,8 +223,38 @@ export class ChainRunner {
     this.health.counters.reconnects = next.reconnects;
     // Never assume reconnecting recovers missed events: backfill from checkpoint.
     const head = await this.source().getBlockNumber();
-    await backfillRange(this.source(), this.deps.filters, this.ingest(), head, { chunkSize: this.deps.chunkSize });
+    await backfillRange(this.source(), this.activeFilters, this.ingest(), head, { chunkSize: this.deps.chunkSize });
     this.subscribe();
+  }
+
+  /** Scoped-filter refresh: when the derived filter set changes
+   * (watchlist/pool rows added), resubscribe WS watchers and backfill
+   * from the checkpoint — new addresses are covered from the checkpoint
+   * on; history before they were added is intentionally NOT backfilled. */
+  private startFilterRefresh(): void {
+    const fr = this.deps.filterRefresh;
+    if (!fr) return;
+    const timer = setInterval(() => {
+      this.enqueue(async () => {
+        try {
+          const next = await fr.build();
+          if (filterFingerprint(next) === filterFingerprint(this.activeFilters)) return;
+          this.log.info("log filters changed; resubscribing + backfilling from checkpoint", {
+            before: this.activeFilters.length, after: next.length,
+          });
+          this.activeFilters = next;
+          this.subscribe();
+          const head = await this.source().getBlockNumber();
+          await backfillRange(this.source(), this.activeFilters, this.ingest(), head, {
+            chunkSize: this.deps.chunkSize,
+          });
+        } catch (err) {
+          this.log.error("filter refresh failed", { err: String(err) });
+        }
+      });
+    }, fr.intervalSeconds * 1000);
+    timer.unref?.();
+    this.subs.push({ name: "__filter_refresh_timer__", startedAt: 0, lastMessageAt: 0, unwatch: () => clearInterval(timer) });
   }
 
   /** Test hook: resolves when all enqueued block/log work has drained. */

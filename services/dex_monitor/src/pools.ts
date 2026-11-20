@@ -43,7 +43,7 @@ export class PoolRegistry {
   }
 
   /** Register a pool found via lazy RPC discovery (no PoolCreated seen). */
-  async registerLazy(address: string, info: DiscoveredPool, ev: NexusNormalizedEvent): Promise<PoolRow> {
+  async registerLazy(address: string, info: DiscoveredPool, ev: NexusNormalizedEvent, discovery = "lazy"): Promise<PoolRow> {
     const row: PoolRow = {
       id: poolId(ev.chain_id, address),
       dex: info.dex,
@@ -54,7 +54,7 @@ export class PoolRegistry {
       createdBlock: null,
       createdTx: null,
       blockHash: null,
-      discovery: info.discovery,
+      discovery,
     };
     await this.store.upsertPool(row);
     this.known.add(row.id);

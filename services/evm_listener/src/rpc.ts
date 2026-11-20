@@ -67,7 +67,7 @@ export interface ChainSource {
   getBlockNumber(): Promise<bigint>;
   getBlock(n: bigint): Promise<SourceBlock>;
   getLogs(args: {
-    topics: string[][];
+    topics: (string[] | null)[];
     address?: string | string[];
     fromBlock: bigint;
     toBlock: bigint;

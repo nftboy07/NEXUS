@@ -94,3 +94,20 @@ describe("lazy pool discovery", () => {
     expect(store.reserves.some((r) => r.poolId === poolId(1, USDT_WETH_PAIR))).toBe(true);
   });
 });
+
+describe("pinned pool seeding", () => {
+  it("registers a pinned pool via the lazy probe path with discovery 'pinned'", async () => {
+    const call = fakeCaller({
+      [USDT_WETH_PAIR]: { factory: V2_FACTORY, token0: USDT, token1: WETH },
+    });
+    const discovery = new LazyPoolDiscovery(call, factories, 100, { maxAttempts: 1, baseMs: 1, capMs: 1 });
+    const store = new FakeDexStore();
+    const registry = new PoolRegistry(store);
+    const info = await discovery.discover(1, USDT_WETH_PAIR);
+    expect(info).not.toBeNull();
+    const row = await registry.registerLazy(USDT_WETH_PAIR, info!,
+      { chain_id: 1, block_number: null, tx_hash: null, block_hash: null } as never, "pinned");
+    expect(row.discovery).toBe("pinned");
+    expect(store.pools.get(`1:${USDT_WETH_PAIR}`)?.discovery).toBe("pinned");
+  });
+});

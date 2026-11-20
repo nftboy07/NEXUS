@@ -56,6 +56,10 @@ export interface EventStore {
   getBlockByNumber(chainId: number, number: bigint): Promise<StoredBlock[]>;
   getCheckpoint(chainId: number): Promise<Checkpoint | null>;
   setCheckpoint(chainId: number, lastBlock: bigint, lastLogCursor: string | null): Promise<void>;
+  /** Watchlist wallet addresses (watchlists.kind = 'wallet') — scoped filters. */
+  watchlistWallets(): Promise<string[]>;
+  /** Registered pool addresses for a chain (pools table) — scoped filters. */
+  poolAddresses(chainId: number): Promise<string[]>;
   recordProviderHealth(row: { provider: string; chainId: number; latencyMs: number; errors: number }): Promise<void>;
   close(): Promise<void>;
 }
@@ -152,6 +156,20 @@ export class PgStore implements EventStore {
        ON CONFLICT (chain_id) DO UPDATE SET last_block = $2, last_log_cursor = $3, updated_at = now()`,
       [chainId, lastBlock.toString(), lastLogCursor]
     );
+  }
+
+  async watchlistWallets(): Promise<string[]> {
+    const res = await this.pool.query(
+      `SELECT value FROM watchlists WHERE kind = 'wallet'`
+    );
+    return res.rows.map((r) => r.value.toLowerCase());
+  }
+
+  async poolAddresses(chainId: number): Promise<string[]> {
+    const res = await this.pool.query(
+      `SELECT id FROM pools WHERE chain_id = $1`, [chainId]
+    );
+    return res.rows.map((r) => r.id.toLowerCase());
   }
 
   async recordProviderHealth(row: { provider: string; chainId: number; latencyMs: number; errors: number }): Promise<void> {

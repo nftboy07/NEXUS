@@ -64,3 +64,18 @@ continues for the rest.
 `LLM_API_KEY`/`LLM_MODEL` it stays `awaiting_model` — run the CLI once
 credentials are configured. `validation_failed` reports are retained for
 audit, flagged unverified, never presented as verified.
+
+## Scoped log filters
+
+`LOG_FILTER_MODE=scoped` (default) subscribes to: allowlisted token
+Transfers (`packages/chain_config/tokens.json`, addresses verified
+on-chain via `symbol()`/`decimals()`), Transfers where topic1/topic2 is a
+watchlist wallet, and DEX events on factories + pinned pools
+(`dexes.json`) + every pool row. `LOG_FILTER_MODE=full` restores the
+previous unscoped subscriptions.
+
+Filters rebuild every `FILTER_REFRESH_SECONDS` (default 60). When a new
+watchlist wallet or pool appears, the listener resubscribes and
+backfills **from the checkpoint forward** — activity before the address
+was added is intentionally NOT backfilled. Address arrays chunk at
+`MAX_FILTER_ADDRESSES` (default 100) per filter.
