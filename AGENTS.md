@@ -41,7 +41,17 @@ npm test           # vitest component/unit tests
 `migrations/*.sql` apply in numeric order via the postgres
 `docker-entrypoint-initdb.d` mount on a **fresh volume only**; apply
 manually with `psql -f` on existing volumes. All migrations must be
-idempotent. Next free number: **011**.
+idempotent. Next free number: **012**. CI check:
+`bash scripts/ci_migrations.sh` (PG* env vars) applies 001..N twice to a
+fresh database and fails on any SQL error or numbering gap.
+
+## CI (GitHub Actions)
+
+`.github/workflows/ci.yml` runs every command above on PRs and pushes to
+`main` (TS matrix, Python matrix, dashboard, migrations on a Postgres 16
+service container). `.github/workflows/smoke.yml` runs `scripts/smoke.sh`
+against free publicnode RPCs — trigger manually (workflow_dispatch) or add
+the `smoke` label to a PR.
 
 ## Rails
 
