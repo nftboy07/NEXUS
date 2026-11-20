@@ -47,6 +47,12 @@
           "pair": "WETH/USDT fee 3000",
           "derivation": "getPool(WETH,USDT,3000) on factory",
           "verified_via": "eth_call ethereum.publicnode.com"
+        },
+        {
+          "address": "0xc7bBeC68d12a0d1830360F8Ec58fA599bA1b0e9b",
+          "pair": "WETH/USDT fee 100",
+          "derivation": "getPool(WETH,USDT,100) on factory",
+          "verified_via": "eth_call ethereum.publicnode.com"
         }
       ]
     },

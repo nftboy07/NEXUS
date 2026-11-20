@@ -133,6 +133,18 @@ done
 DCODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ || echo 000)
 [ "$DCODE" = "200" ] && pass "dashboard 200" || fail "dashboard 200 ($DCODE)"
 
+# ---------- check 5: Engine 5 cursor follows ingestion ----------
+ok5=no
+for i in $(seq 1 20); do
+  m1=$(psql_ "SELECT last_block FROM mev_analyzer_cursor WHERE chain_id=1"); m8453=$(psql_ "SELECT last_block FROM mev_analyzer_cursor WHERE chain_id=8453")
+  [ -n "$m1" ] && [ -n "$m8453" ] && { ok5=yes; break; }
+  sleep 6
+done
+[ "$ok5" = yes ] && pass "mev_analyzer cursor set on both chains (eth=$m1 base=$m8453)" || fail "mev_analyzer cursor set on both chains"
+MERR=$(docker compose logs --no-log-prefix mev_analyzer 2>&1 | grep -c '"level": "error"' || true)
+[ "${MERR:-0}" = "0" ] && pass "mev_analyzer passes without errors" || fail "mev_analyzer passes without errors ($MERR error lines)"
+info "mev_findings: $(psql_ "SELECT COALESCE(string_agg(kind || '@' || chain_id || '=' || n, ' '), 'none') FROM (SELECT kind, chain_id, COUNT(*) n FROM mev_findings GROUP BY 1,2) t")"
+
 echo "----------------------------------------"
 echo "smoke duration: $(( $(date +%s) - START ))s, failures: $FAILURES"
 info "stack left running (docker compose down to stop)"
