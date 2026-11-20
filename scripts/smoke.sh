@@ -122,6 +122,19 @@ fi
 docker rm -f evm_listener_broken >/dev/null 2>&1 || true
 docker compose up -d evm_listener
 
+# ---------- check 5: Engine 3 scores + relations computed live ----------
+info "check 5: waiting up to 3 min for wallet_scores on chains 1 and 8453"
+ok5=no
+for i in $(seq 1 36); do
+  s1=$(psql_ "SELECT COUNT(*) FROM wallet_scores WHERE chain_id=1"); s8453=$(psql_ "SELECT COUNT(*) FROM wallet_scores WHERE chain_id=8453")
+  [ "${s1:-0}" -gt 0 ] && [ "${s8453:-0}" -gt 0 ] && { ok5=yes; break; }
+  sleep 5
+done
+info "  wallet_transfers: $(psql_ "SELECT string_agg(chain_id||'='||n, ' ') FROM (SELECT chain_id, COUNT(*) n FROM wallet_transfers GROUP BY 1 ORDER BY 1) t")"
+info "  wallet_scores:    $(psql_ "SELECT string_agg(chain_id||'='||n, ' ') FROM (SELECT chain_id, COUNT(*) n FROM wallet_scores GROUP BY 1 ORDER BY 1) t")"
+info "  wallet_relations: $(psql_ "SELECT COALESCE(string_agg(chain_id||'='||n, ' '), 'none yet (data-dependent)') FROM (SELECT chain_id, COUNT(*) n FROM wallet_relations GROUP BY 1 ORDER BY 1) t")"
+[ "$ok5" = yes ] && pass "wallet_scores computed live on both chains" || fail "wallet_scores computed live on both chains"
+
 # ---------- check 4: API + dashboard ----------
 CODE=000
 for i in $(seq 1 20); do

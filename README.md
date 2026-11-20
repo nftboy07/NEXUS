@@ -90,7 +90,7 @@ Batch/CLI services run on demand, not as daemons: `mev_analyzer`
 |---|---|---|---|
 | Engine 1 listener | ✅ | ✅ | ✅ `scripts/smoke.sh` (ingest, restart catch-up, dedup, no gaps, chain isolation) |
 | Engine 2 mempool | ✅ | ✅ | ✅ pending txs stored from public WSS (eth + Base) |
-| Engine 3 wallet intel | ✅ | ✅ | ⚠️ transfers stored live; no wallet scores yet in a short run |
+| Engine 3 wallet intel | ✅ | ✅ | ⚠️ transfers, wallet scores (partial coverage: no prices → no realized/risk-adjusted perf) and relation hypotheses computed live on eth + Base (`scripts/smoke.sh` check 5) |
 | Engine 4 DEX radar | ✅ | ✅ | ✅ pinned pools, liquidity events + reserves stored live |
 | Engine 5 MEV | ✅ | ✅ | ❌ batch job, not in compose; not run live |
 | Engine 6 AI investigator | ✅ | ✅ (fake provider) | ⚠️ worker starts; no real LLM calls |

@@ -20,6 +20,8 @@ from db import PgWalletStore
 from scoring import compute_score
 from clusters import find_hypotheses
 
+EMPTY_RETRY_SECONDS = 30
+
 
 def json_logger(name: str) -> logging.Logger:
     import json
@@ -44,35 +46,69 @@ def json_logger(name: str) -> logging.Logger:
 
 
 def refresh_scores(store, chain_id: int, log: logging.Logger) -> int:
-    """Recompute scores + hypotheses for all wallets with stored transfers."""
+    """Recompute scores + hypotheses for all wallets with stored transfers on
+    one chain. One pass over rows (O(rows), not O(wallets x rows)); scores are
+    committed before hypotheses so a slow/failed relation pass never discards
+    them."""
+    t0 = time.monotonic()
     rows = store.all_transfers(chain_id)
     if not rows:
         return 0
     # token -> sorted per-wallet first-inbound blocks (for early_discovery)
     first_inbound: dict[tuple[str, str], int] = {}
+    by_wallet: dict[str, list[dict]] = {}
     for r in sorted(rows, key=lambda x: int(x["block_number"])):
         key = (r["token"], r["recipient"])
         first_inbound.setdefault(key, int(r["block_number"]))
+        by_wallet.setdefault(r["sender"], []).append(r)
+        if r["recipient"] != r["sender"]:
+            by_wallet.setdefault(r["recipient"], []).append(r)
     chain_first: dict[str, list[int]] = {}
     for (token, _), b in first_inbound.items():
         chain_first.setdefault(token, []).append(b)
     for lst in chain_first.values():
         lst.sort()
 
-    wallets = {r["sender"] for r in rows} | {r["recipient"] for r in rows}
-    n = 0
-    for w in wallets:
-        wrows = [r for r in rows if r["sender"] == w or r["recipient"] == w]
-        s = compute_score(w, chain_id, wrows, chain_first, store.failed_tx_count(chain_id, w))
+    failed = store.failed_tx_counts(chain_id)
+    scored = 0
+    for w in sorted(by_wallet):
+        s = compute_score(w, chain_id, by_wallet[w], chain_first, failed.get(w))
         store.upsert_score(w, chain_id, s.score, s.coverage, s.components.model_dump())
-        n += 1
-    for h in find_hypotheses(chain_id, rows):
+        if s.score is not None:
+            scored += 1
+    scores_pruned = store.prune_scores(chain_id, list(by_wallet))
+    store.commit()
+    t1 = time.monotonic()
+
+    stats: dict = {}
+    hyps = find_hypotheses(chain_id, rows, stats)
+    for h in hyps:
         store.upsert_relation(
             h.address_a, h.address_b, chain_id,
             [s.model_dump() for s in h.signals], h.confidence, h.alternatives,
         )
+    relations_pruned = store.prune_relations(chain_id, [(h.address_a, h.address_b) for h in hyps])
     store.commit()
-    return n
+    log.info("score refresh", extra={
+        "chain_id": chain_id, "transfers": len(rows), "wallets": len(by_wallet),
+        "wallets_with_score": scored, "relations": len(hyps), **stats,
+        "scores_pruned": scores_pruned, "relations_pruned": relations_pruned,
+        "score_secs": round(t1 - t0, 3), "relation_secs": round(time.monotonic() - t1, 3),
+    })
+    return len(by_wallet)
+
+
+def refresh_all(store, log: logging.Logger) -> int:
+    """Refresh every chain present in wallet_transfers. A failing chain is
+    logged and rolled back; it never stops the consumer loop."""
+    total = 0
+    for chain_id in store.transfer_chain_ids():
+        try:
+            total += refresh_scores(store, chain_id, log)
+        except Exception:
+            store.rollback()
+            log.exception("score refresh failed", extra={"chain_id": chain_id})
+    return total
 
 
 def main() -> None:
@@ -101,7 +137,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, _sig)
 
     refresh_secs = int(os.getenv("SCORE_REFRESH_SECONDS", "300"))
-    last_refresh = 0.0
+    next_refresh = 0.0
     last_heartbeat = 0.0
     processed = 0
     log.info("wallet_intelligence started", extra={"group": GROUP, "stream": EVENTS_STREAM})
@@ -111,10 +147,11 @@ def main() -> None:
         if now - last_heartbeat >= 60:
             log.info("heartbeat", extra={"processed": processed})
             last_heartbeat = now
-        if now - last_refresh >= refresh_secs:
-            n = refresh_scores(store, 1, log)
-            log.info("score refresh", extra={"wallets": n})
-            last_refresh = now
+        if now >= next_refresh:
+            n = refresh_all(store, log)
+            # Nothing stored yet (fresh stack): retry soon instead of idling
+            # a full interval before the first scores can appear.
+            next_refresh = now + (refresh_secs if n else min(refresh_secs, EMPTY_RETRY_SECONDS))
     store.close()
     log.info("wallet_intelligence stopped")
 
