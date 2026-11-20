@@ -6,8 +6,6 @@ name: Smoke (live, manual)
 on:
   pull_request:
     types: [labeled]
-  push:
-    branches: [devin/1795176092-ci]
   workflow_dispatch:
     inputs:
       eth_wss:
@@ -28,7 +26,7 @@ permissions:
 
 jobs:
   smoke:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'smoke'
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'smoke'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
