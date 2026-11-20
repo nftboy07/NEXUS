@@ -1,0 +1,1 @@
+{"chains":[{"confirmations":12,"http_env":"HTTP_RPC_URL","id":1,"name":"ethereum","wss_env":"WSS_RPC_URL"},{"confirmations":20,"http_env":"HTTP_RPC_URL_BASE","id":8453,"name":"base","wss_env":"WSS_RPC_URL_BASE"},{"id":42161,"name":"arbitrum","planned":true},{"id":56,"name":"bsc","planned":true}]}
