@@ -54,6 +54,8 @@ export interface SourceTransaction {
   from: string;
   to: string | null;
   value: bigint;
+  nonce?: bigint;
+  blockHash?: string | null;
 }
 
 export interface SourceReceipt {
@@ -102,7 +104,7 @@ export function viemChainSource(client: PublicClient): ChainSource {
     },
     getTransaction: async (hash) => {
       const tx = await client.getTransaction({ hash: hash as `0x${string}` });
-      return { hash: tx.hash, from: tx.from, to: tx.to, value: tx.value };
+      return { hash: tx.hash, from: tx.from, to: tx.to, value: tx.value, nonce: BigInt(tx.nonce), blockHash: tx.blockHash };
     },
     getTransactionReceipt: async (hash) => {
       const r = await client.getTransactionReceipt({ hash: hash as `0x${string}` });

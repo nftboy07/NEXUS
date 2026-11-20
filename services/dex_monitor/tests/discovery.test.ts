@@ -51,7 +51,7 @@ describe("lazy pool discovery", () => {
     const call = fakeCaller({
       [USDT_WETH_PAIR]: { factory: V2_FACTORY, token0: USDT, token1: WETH },
     }, counter);
-    const d = new LazyPoolDiscovery(call, factories, 100, { maxAttempts: 1, baseMs: 1, maxMs: 1 });
+    const d = new LazyPoolDiscovery(call, factories, 100, { maxAttempts: 1, baseMs: 1, capMs: 1 });
     const found = await d.discover(1, USDT_WETH_PAIR);
     expect(found).toMatchObject({
       dex: "uniswap_v2", dexType: "v2", token0: USDT, token1: WETH, discovery: "lazy",
@@ -64,7 +64,7 @@ describe("lazy pool discovery", () => {
     const call = fakeCaller({
       [USDT_WETH_PAIR]: { factory: "0x000000000000000000000000000000000000dead" },
     }, counter);
-    const d = new LazyPoolDiscovery(call, factories, 100, { maxAttempts: 1, baseMs: 1, maxMs: 1 });
+    const d = new LazyPoolDiscovery(call, factories, 100, { maxAttempts: 1, baseMs: 1, capMs: 1 });
     expect(await d.discover(1, USDT_WETH_PAIR)).toBeNull();
     expect(await d.discover(1, USDT_WETH_PAIR)).toBeNull();
     expect(counter.n).toBe(1); // one factory() call, then cached
@@ -76,7 +76,7 @@ describe("lazy pool discovery", () => {
     const call = fakeCaller({
       [USDT_WETH_PAIR]: { factory: V2_FACTORY, token0: USDT, token1: WETH },
     }, counter);
-    const discovery = new LazyPoolDiscovery(call, factories, 100, { maxAttempts: 1, baseMs: 1, maxMs: 1 });
+    const discovery = new LazyPoolDiscovery(call, factories, 100, { maxAttempts: 1, baseMs: 1, capMs: 1 });
     const p = new DexProcessor({
       store,
       registry: new PoolRegistry(store),

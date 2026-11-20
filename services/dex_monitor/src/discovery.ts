@@ -38,7 +38,7 @@ export class LazyPoolDiscovery {
     private call: RpcCaller,
     private factoriesPerChain: Map<number, FactoryMap>,
     private maxNegative = 10_000,
-    private retryOpts = { maxAttempts: 3, baseMs: 200, maxMs: 2_000 }
+    private retryOpts = { maxAttempts: 3, baseMs: 200, capMs: 2_000 }
   ) {}
 
   private async call0(chainId: number, to: string, fn: AbiFunction): Promise<string | null> {

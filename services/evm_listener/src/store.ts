@@ -30,6 +30,10 @@ export interface StoredTransaction {
   value: string | null;
   status: string | null;
   blockNumber: bigint | null;
+  /** nonce + block_hash columns are added by migration 002 (Engine 2 needs
+   * them for REPLACED/REORGED detection). */
+  nonce?: bigint | null;
+  blockHash?: string | null;
 }
 
 export interface Checkpoint {
@@ -81,10 +85,13 @@ export class PgStore implements EventStore {
 
   async upsertTransaction(t: StoredTransaction): Promise<UpsertResult> {
     const res = await this.pool.query(
-      `INSERT INTO transactions (chain_id, hash, sender, recipient, value, status, block_number)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT (chain_id, hash) DO NOTHING`,
-      [t.chainId, t.hash, t.sender, t.recipient, t.value, t.status, t.blockNumber?.toString() ?? null]
+      `INSERT INTO transactions (chain_id, hash, sender, recipient, value, status, block_number, nonce, block_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (chain_id, hash) DO UPDATE
+       SET nonce = COALESCE(EXCLUDED.nonce, transactions.nonce),
+           block_hash = COALESCE(EXCLUDED.block_hash, transactions.block_hash)`,
+      [t.chainId, t.hash, t.sender, t.recipient, t.value, t.status, t.blockNumber?.toString() ?? null,
+       t.nonce?.toString() ?? null, t.blockHash ?? null]
     );
     return res.rowCount === 0 ? "duplicate" : "inserted";
   }

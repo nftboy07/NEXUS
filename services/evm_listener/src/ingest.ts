@@ -99,6 +99,8 @@ export async function ingestTransactions(
         value: tx.value.toString(),
         status: receipt.status,
         blockNumber: receipt.blockNumber,
+        nonce: tx.nonce,
+        blockHash: tx.blockHash,
       });
       stored++;
     } catch (err) {
