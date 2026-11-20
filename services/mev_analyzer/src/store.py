@@ -1,5 +1,9 @@
 """Postgres access for Engine 5. MevStore is a protocol; production uses
-PgMevStore (psycopg), tests inject fakes."""
+PgMevStore (psycopg), tests inject fakes.
+
+All block-scoped reads resolve block numbers through Engine 1's `blocks`
+table (logs carry block_hash, not number) and skip hashes listed in
+`removed_blocks` (orphaned by a reorg)."""
 from __future__ import annotations
 
 import json
@@ -7,18 +11,23 @@ from typing import Optional, Protocol
 
 import psycopg
 
+from findings import ALERTS_DESTINATION
+from swaps import DEX_TOPICS, V3_SWAP, _words
+
+CANONICAL = ("JOIN blocks b ON b.chain_id = l.chain_id AND b.hash = l.block_hash "
+             "AND NOT EXISTS (SELECT 1 FROM removed_blocks rb WHERE rb.chain_id = b.chain_id "
+             "AND rb.block_hash = b.hash) ")
+
 
 class MevStore(Protocol):
-    def txs_in_block(self, chain_id: int, block: int) -> list[dict]: ...
-    def swaps_in_block(self, chain_id: int, block: int) -> list[dict]: ...
-    def reserves_at(self, pool_id: str, block: int) -> Optional[dict]: ...
-    def liquidation_logs(self, chain_id: int, block: int, contracts: set[str]) -> list[dict]: ...
+    def swap_logs(self, chain_id: int, from_block: int, to_block: int) -> list[dict]: ...
+    def prev_v3_sqrt(self, pool_id: str, block: int) -> Optional[int]: ...
+    def liquidation_logs(self, chain_id: int, from_block: int, to_block: int, contracts: set[str]) -> list[dict]: ...
     def cursor(self, chain_id: int) -> Optional[int]: ...
     def set_cursor(self, chain_id: int, block: int) -> None: ...
     def checkpoint(self, chain_id: int) -> Optional[int]: ...
     def insert_finding(self, f) -> bool: ...
-    def insert_alert(self, destination: str, message: str) -> None: ...
-    def has_alert(self, dedup_key: str) -> bool: ...
+    def insert_alert(self, record: dict, message: str) -> bool: ...
     def commit(self) -> None: ...
 
 
@@ -31,40 +40,41 @@ class PgMevStore:
         cols = [d.name for d in cur.description]
         return [dict(zip(cols, r)) for r in cur.fetchall()]
 
-    def txs_in_block(self, chain_id, block):
-        # transactions has no position column; order by hash for determinism.
+    def swap_logs(self, chain_id, from_block, to_block):
+        """Swap/Sync logs on registered pools, ordered by (block, log_index)."""
         return self._rows(
-            "SELECT hash, sender, block_number, value FROM transactions "
-            "WHERE chain_id=%s AND block_number=%s ORDER BY hash",
-            (chain_id, block))
+            "SELECT l.chain_id, b.number AS block_number, l.transaction_hash AS tx_hash, l.log_index, "
+            "       l.topics, l.data, p.id AS pool_id, p.dex, p.token0, p.token1, t.sender "
+            "FROM logs l " + CANONICAL +
+            "JOIN pools p ON p.chain_id = l.chain_id AND p.id = l.chain_id || ':' || lower(l.contract) "
+            "LEFT JOIN transactions t ON t.chain_id = l.chain_id AND t.hash = l.transaction_hash "
+            "WHERE l.chain_id = %s AND b.number BETWEEN %s AND %s AND l.removed = FALSE "
+            "  AND l.topics->>0 = ANY(%s) "
+            "ORDER BY b.number, l.log_index",
+            (chain_id, from_block, to_block, list(DEX_TOPICS)))
 
-    def swaps_in_block(self, chain_id, block):
-        # Engine 4 liquidity_events (swap rows carry amount0/amount1 inputs).
-        return self._rows(
-            "SELECT le.pool_id, le.event_type, le.amount0, le.amount1, le.tx_hash, "
-            "       t.sender, le.block_number "
-            "FROM liquidity_events le LEFT JOIN transactions t "
-            "  ON t.chain_id=%s AND t.hash=le.tx_hash "
-            "WHERE le.chain_id=%s AND le.block_number=%s AND le.event_type='swap' "
-            "ORDER BY le.tx_hash",
-            (chain_id, chain_id, block))
-
-    def reserves_at(self, pool_id, block):
+    def prev_v3_sqrt(self, pool_id, block):
+        chain_id, addr = pool_id.split(":", 1)
         rows = self._rows(
-            "SELECT pool_id, reserve0, reserve1, block_number FROM pool_reserves "
-            "WHERE pool_id=%s AND block_number<=%s AND reserve0 IS NOT NULL "
-            "ORDER BY block_number DESC LIMIT 1",
-            (pool_id, block))
-        return rows[0] if rows else None
+            "SELECT l.data FROM logs l " + CANONICAL +
+            "WHERE l.chain_id = %s AND lower(l.contract) = %s AND b.number < %s "
+            "  AND l.removed = FALSE AND l.topics->>0 = %s "
+            "ORDER BY b.number DESC, l.log_index DESC LIMIT 1",
+            (int(chain_id), addr.lower(), block, V3_SWAP))
+        if not rows:
+            return None
+        w = _words(rows[0]["data"])
+        return w[2] if len(w) >= 3 else None
 
-    def liquidation_logs(self, chain_id, block, contracts):
+    def liquidation_logs(self, chain_id, from_block, to_block, contracts):
         if not contracts:
             return []
         return self._rows(
-            "SELECT transaction_hash, block_number, contract, topics, data, log_index "
-            "FROM logs WHERE chain_id=%s AND block_number=%s "
-            "AND contract = ANY(%s) AND removed=FALSE ORDER BY log_index",
-            (chain_id, block, sorted(contracts)))
+            "SELECT l.transaction_hash, b.number AS block_number, l.contract, l.topics, l.data, l.log_index "
+            "FROM logs l " + CANONICAL +
+            "WHERE l.chain_id = %s AND b.number BETWEEN %s AND %s "
+            "  AND lower(l.contract) = ANY(%s) AND l.removed = FALSE ORDER BY b.number, l.log_index",
+            (chain_id, from_block, to_block, sorted(contracts)))
 
     def cursor(self, chain_id):
         rows = self._rows("SELECT last_block FROM mev_analyzer_cursor WHERE chain_id=%s", (chain_id,))
@@ -90,7 +100,7 @@ class PgMevStore:
              f.confidence.model_dump_json()))
         return cur.rowcount > 0
 
-    def insert_alert(self, record: dict, message):
+    def insert_alert(self, record: dict, message: str) -> bool:
         """Insert with identity columns; False when dedup_key already existed."""
         cur = self.conn.execute(
             "INSERT INTO alerts (dedup_key, source_engine, kind, chain_id, record, destination, message, delivery_state) "
@@ -100,10 +110,11 @@ class PgMevStore:
              record["chain_id"], message, ALERTS_DESTINATION, message))
         return cur.rowcount > 0
 
-    def has_alert(self, dedup_key):
-        cur = self.conn.execute(
-            "SELECT 1 FROM alerts WHERE dedup_key = %s LIMIT 1", (dedup_key,))
-        return cur.fetchone() is not None
-
     def commit(self):
         self.conn.commit()
+
+    def rollback(self):
+        self.conn.rollback()
+
+    def close(self):
+        self.conn.close()

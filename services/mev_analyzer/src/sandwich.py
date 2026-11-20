@@ -1,99 +1,93 @@
-"""Potential-sandwich detection. ALL conditions required (a resemblance,
-never proven intent):
+"""Potential-sandwich detection over ordered swap legs of one block. ALL
+conditions required (a resemblance, never proven intent):
 
-  same pool; within one block, tx A1 (initiator X swaps), victim tx V
-  (different sender, same pool+pair direction, ordered between A1 and A2),
-  tx A2 (initiator X swaps back). Victim impact is estimated as the price
-  move A1 caused vs the pre-A1 reserves (constant-product, 0.3% fee —
-  same formulas as Engine 4 impact.ts). If reserves at that block are
-  unavailable the candidate is NOT emitted and counted insufficient.
+  same pool; front leg A1 by initiator X (tx.from); victim leg V by a
+  different sender, same direction, ordered (log_index) after A1; back leg
+  A2 by X in a different tx, opposite direction, ordered after V. The
+  victim-impact estimate is the pool price move caused by A1 (pre vs post
+  A1, from stored Sync / V3 sqrtPriceX96 — see swaps.py). If that move is
+  not derivable from stored logs the candidate is NOT emitted and counted
+  insufficient evidence.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from models import Confidence, Finding
+from swaps import direction, price_move_pct
 
 MIN_VICTIM_IMPACT_PCT_DEFAULT = 0.5
 
 
-def _impact_pct(amount_in: int, reserve_in: int, reserve_out: int, fee_num: int = 997) -> float:
-    """Engine 4 formula: out = dx*feeNum*rOut / (rIn*10000 + dx*feeNum);
-    impact = 1 - effectivePrice/spotPrice, in percent."""
-    if reserve_in <= 0 or reserve_out <= 0:
-        return 0.0
-    spot = reserve_out / reserve_in
-    out = (amount_in * fee_num * reserve_out) / (reserve_in * 10_000 + amount_in * fee_num)
-    eff = out / amount_in if amount_in else 0.0
-    return (1 - eff / spot) * 100 if spot > 0 else 0.0
+def _gross_profit(a1: dict, a2: dict) -> dict:
+    """Initiator's gross delta in A1's input token: what A2 returned minus
+    what A1 spent. Excludes gas, builder tips and any unclosed position."""
+    d = direction(a1)
+    spent = int(a1[f"amount{d}_in"])
+    got = int(a2[f"amount{d}_out"])
+    return {"token": a1.get(f"token{d}"), "raw_delta": str(got - spent)}
 
 
-def find_sandwiches(
-    swaps: list[dict],
-    reserves_for,
-    min_impact_pct: float = MIN_VICTIM_IMPACT_PCT_DEFAULT,
-) -> tuple[list[Finding], int]:
-    """swaps: ordered rows {tx_hash, sender, pool_id, amount0, amount1,
-    block_number}. reserves_for(pool_id, block) -> reserve dict|None.
+def find_sandwiches(legs: list[dict], chain_id: int,
+                    min_impact_pct: float = MIN_VICTIM_IMPACT_PCT_DEFAULT) -> tuple[list[Finding], int]:
+    """legs: one block's swap legs (swaps.decode_legs shape), any order.
     Returns (findings, insufficient_evidence_count)."""
     findings: list[Finding] = []
     insufficient = 0
     by_pool: dict[str, list[dict]] = {}
-    for s in swaps:
-        by_pool.setdefault(s["pool_id"], []).append(s)
+    for leg in sorted(legs, key=lambda x: x["log_index"]):
+        by_pool.setdefault(leg["pool_id"], []).append(leg)
 
-    for pool_id, legs in by_pool.items():
-        senders: dict[str, list[int]] = {}
-        for i, leg in enumerate(legs):
-            if leg.get("sender"):
-                senders.setdefault(leg["sender"], []).append(i)
-        for sender, idxs in senders.items():
-            if len(idxs) < 2:
+    for pool_id, pl in by_pool.items():
+        used_back: set[int] = set()
+        for i, a1 in enumerate(pl):
+            x = a1.get("sender")
+            if not x or i in used_back:
                 continue
-            a1_i, a2_i = idxs[0], idxs[-1]
-            a1, a2 = legs[a1_i], legs[a2_i]
-            for v_i in range(a1_i + 1, a2_i):
-                v = legs[v_i]
-                if v.get("sender") == sender or not v.get("sender"):
+            match = None
+            for k in range(i + 2, len(pl)):
+                a2 = pl[k]
+                if a2.get("sender") != x or a2["tx_hash"] == a1["tx_hash"] or direction(a2) == direction(a1):
                     continue
-                # same direction: both push the same input side
-                if (int(a1["amount0"] or 0) > 0) != (int(v["amount0"] or 0) > 0):
-                    continue
-                # A2 swaps back: opposite input side to A1
-                if (int(a2["amount0"] or 0) > 0) == (int(a1["amount0"] or 0) > 0):
-                    continue
-                res = reserves_for(pool_id, a1["block_number"])
-                if res is None or res["reserve0"] is None:
-                    insufficient += 1
-                    continue
-                amount_in = int(a1["amount0"] or a1["amount1"] or 0)
-                reserve_in = int(res["reserve0"] if a1["amount0"] else res["reserve1"])
-                reserve_out = int(res["reserve1"] if a1["amount0"] else res["reserve0"])
-                impact = _impact_pct(amount_in, reserve_in, reserve_out)
-                if impact < min_impact_pct:
-                    continue
-                chain_id = int(str(pool_id).split(":")[0]) if ":" in str(pool_id) else 0
-                findings.append(Finding(
-                    kind="potential_sandwich",
-                    chain_id=chain_id,
-                    block_number=int(a1["block_number"]),
-                    initiator=sender,
-                    victim=v.get("sender"),
-                    pool_id=pool_id,
-                    evidence=[
-                        {"tx_hash": a1["tx_hash"], "block_number": a1["block_number"], "role": "front_leg"},
-                        {"tx_hash": v["tx_hash"], "block_number": v["block_number"], "role": "victim"},
-                        {"tx_hash": a2["tx_hash"], "block_number": a2["block_number"], "role": "back_leg"},
-                    ],
-                    estimated_impact={
-                        "victim_impact_pct_estimate": impact,
-                        "method": "constant-product price move caused by front leg "
-                                  "(same formula as Engine 4 impact.ts; excludes gas/fees)",
-                    },
-                    confidence=Confidence(
-                        level="medium" if impact < 2 * min_impact_pct else "high",
-                        rationale="potential sandwich pattern — same-pool A1->V->A2 ordering "
-                                  "resembling a sandwich; resemblance only, never proven intent",
-                    ),
-                ))
+                victims = [v for v in pl[i + 1:k]
+                           if v.get("sender") and v["sender"] != x and direction(v) == direction(a1)
+                           and v["tx_hash"] not in (a1["tx_hash"], a2["tx_hash"])]
+                if victims:
+                    match = (k, a2, victims)
+                    break
+            if match is None:
+                continue
+            k, a2, victims = match
+            impact = price_move_pct(a1)
+            if impact is None:
+                insufficient += 1
+                continue
+            if impact < min_impact_pct:
+                continue
+            used_back.add(k)
+            profit = _gross_profit(a1, a2)
+            high = impact >= 2 * min_impact_pct and int(profit["raw_delta"]) > 0
+            ev = lambda leg, role: {"tx_hash": leg["tx_hash"], "block_number": leg["block_number"],  # noqa: E731
+                                    "log_index": leg["log_index"], "role": role, "sender": leg.get("sender"),
+                                    "amount0_in": str(leg["amount0_in"]), "amount1_in": str(leg["amount1_in"]),
+                                    "amount0_out": str(leg["amount0_out"]), "amount1_out": str(leg["amount1_out"])}
+            findings.append(Finding(
+                kind="potential_sandwich",
+                chain_id=chain_id,
+                block_number=int(a1["block_number"]),
+                initiator=x,
+                victim=victims[0]["sender"],
+                pool_id=pool_id,
+                evidence=[ev(a1, "front_leg"), *[ev(v, "victim") for v in victims], ev(a2, "back_leg")],
+                estimated_impact={
+                    "victim_impact_pct_estimate": impact,
+                    "initiator_gross_profit_estimate": profit,
+                    "method": "pool price move caused by the front leg (pre vs post reserves/sqrtPrice "
+                              "from stored logs); profit = back-leg output minus front-leg input in the "
+                              "front leg's input token, raw units; excludes gas/fees/tips",
+                },
+                confidence=Confidence(
+                    level="high" if high else "medium",
+                    rationale="potential sandwich pattern — same-pool A1->V->A2 ordering by log_index "
+                              "resembling a sandwich; resemblance only, never proven intent",
+                ),
+            ))
     return findings, insufficient
