@@ -14,7 +14,7 @@ from __future__ import annotations
 from models import Confidence, Finding
 from swaps import direction, price_move_pct
 
-MIN_VICTIM_IMPACT_PCT_DEFAULT = 0.5
+MIN_VICTIM_IMPACT_PCT_DEFAULT = 0.1
 
 
 def _gross_profit(a1: dict, a2: dict) -> dict:

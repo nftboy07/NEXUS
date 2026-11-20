@@ -70,3 +70,35 @@ def test_missing_prices_insufficient_evidence():
             v2_swap_row("0xa2", 3, POOL, "0xattacker", 0, 900_000, 480_000, 0)]
     findings, insuff = find_sandwiches(legs_of(rows), 1)
     assert findings == [] and insuff == 1
+
+
+def test_deep_pool_sandwich_under_slippage_detected_at_default():
+    # ~0.25% front-leg move: below a 0.5% floor, above the 0.1% default
+    rows = []
+    r = v2_trade(rows, "0xa1", POOL, "0xattacker", RES, a0in=12_500)
+    r = v2_trade(rows, "0xv", POOL, "0xvictim", r, a0in=5_000)
+    bought = int(rows[1]["data"][2 + 64 * 3:2 + 64 * 4], 16)
+    v2_trade(rows, "0xa2", POOL, "0xattacker", r, a1in=bought)
+    findings, _ = find_sandwiches(legs_of(rows), 1)
+    assert len(findings) == 1
+    assert 0.1 < findings[0].estimated_impact["victim_impact_pct_estimate"] < 0.5
+    assert find_sandwiches(legs_of(rows), 1, min_impact_pct=0.5)[0] == []
+
+
+def test_real_mainnet_sandwich_block_26456257():
+    import json
+    from pathlib import Path
+    fx = json.loads((Path(__file__).parent / "fixtures" / "eth_26456257_sandwich.json").read_text())
+    prev = int(fx["prev_v3_sqrt"])
+    legs = decode_legs(fx["rows"], lambda p, b: prev)
+    findings, insuff = find_sandwiches(legs, 1)
+    assert insuff == 0 and len(findings) == 1
+    f = findings[0]
+    assert f.block_number == 26456257
+    assert f.pool_id == "1:0xc7bbec68d12a0d1830360f8ec58fa599ba1b0e9b"
+    assert f.initiator == "0xae2fc483527b8ef99eb5d9b44875f005ba1fae13"
+    assert [e["log_index"] for e in f.evidence] == [112, 124, 139, 181]
+    assert f.evidence[0]["tx_hash"] == "0x5f22a3376a41338fbfdbaffd1d1dc1fe16b3eb0eef1e077fa23fae1a4c5bc592"
+    assert f.evidence[-1]["tx_hash"] == "0x4b66ad0a162f478b6e14d63dcae24325143a2d83e4f2bf21dc7b283104e77677"
+    profit = f.estimated_impact["initiator_gross_profit_estimate"]
+    assert profit["token"] == "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2" and int(profit["raw_delta"]) > 0

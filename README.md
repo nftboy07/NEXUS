@@ -93,7 +93,7 @@ every `MEV_INTERVAL_SECONDS`); explicit ranges:
 | Engine 2 mempool | ✅ | ✅ | ✅ pending txs stored from public WSS (eth + Base) |
 | Engine 3 wallet intel | ✅ | ✅ | ⚠️ transfers stored live; no wallet scores yet in a short run |
 | Engine 4 DEX radar | ✅ | ✅ | ✅ pinned pools, liquidity events + reserves stored live |
-| Engine 5 MEV | ✅ | ✅ | ❌ batch job, not in compose; not run live |
+| Engine 5 MEV | ✅ | ✅ | ⚠️ compose loop service live on eth + Base; 1 `potential_sandwich` written from live-ingested Ethereum data (block 26456257); no arbitrage/liquidation findings yet; Base window had no sandwich-shaped blocks |
 | Engine 6 AI investigator | ✅ | ✅ (fake provider) | ⚠️ worker starts; no real LLM calls |
 | Engine 7 dispatcher/API | ✅ | ✅ (HTTP fakes) | ⚠️ log-only delivery + API `/health` live; no real Telegram/Discord |
 | Dashboard | ✅ | ✅ | ✅ production build serves 200 |

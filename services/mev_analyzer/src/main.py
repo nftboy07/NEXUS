@@ -86,7 +86,7 @@ def main(argv=None) -> int:
     protocols = load_protocols()
     cfg = {
         "chain_ids": [int(x) for x in os.getenv("MEV_CHAIN_IDS", "1,8453").split(",") if x.strip()],
-        "min_impact": float(os.getenv("MEV_MIN_VICTIM_IMPACT_PCT", "0.5")),
+        "min_impact": float(os.getenv("MEV_MIN_VICTIM_IMPACT_PCT", "0.1")),
         "batch": int(os.getenv("MEV_BATCH_BLOCKS", "500")),
         "max_blocks": int(os.getenv("MEV_MAX_BLOCKS_PER_RUN", "2000")),
         "confirmations": int(os.getenv("MEV_CONFIRMATIONS", "2")),
