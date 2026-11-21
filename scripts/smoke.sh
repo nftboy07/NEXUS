@@ -35,6 +35,7 @@ fi
 : "${HTTP_RPC_URL_BASE:=https://base-rpc.publicnode.com}"
 export WSS_RPC_URL HTTP_RPC_URL WSS_RPC_URL_BASE HTTP_RPC_URL_BASE
 : "${NEXUS_API_KEY:=smoke-key}"; export NEXUS_API_KEY
+: "${DASHBOARD_PROXY_TOKEN:=smoke-operator-token}"; export DASHBOARD_PROXY_TOKEN
 
 # ---------- bring up ----------
 docker compose up -d --build
@@ -144,8 +145,21 @@ for i in $(seq 1 20); do
   sleep 3
 done
 [ "$CODE" = "200" ] && pass "api /health 200" || fail "api /health 200 ($CODE)"
-DCODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ || echo 000)
-[ "$DCODE" = "200" ] && pass "dashboard 200" || fail "dashboard 200 ($DCODE)"
+# the dashboard renders with the server API key, so it must refuse anonymous
+# callers (redirect to /login) and serve pages only with an operator session
+DANON=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ || echo 000)
+[ "$DANON" = "307" ] || [ "$DANON" = "302" ] && pass "dashboard rejects anonymous ($DANON -> /login)" || fail "dashboard rejects anonymous (got $DANON, want 302/307)"
+DPROXY_ANON=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/nexus/alerts || echo 000)
+[ "$DPROXY_ANON" = "401" ] && pass "dashboard proxy 401 without session" || fail "dashboard proxy 401 without session ($DPROXY_ANON)"
+COOKIES=$(mktemp)
+SCODE=$(curl -s -o /dev/null -w "%{http_code}" -c "$COOKIES" -X POST http://localhost:3000/api/session \
+  -H 'content-type: application/json' -d "{\"token\":\"$DASHBOARD_PROXY_TOKEN\"}" || echo 000)
+[ "$SCODE" = "200" ] && pass "dashboard /api/session issues operator session" || fail "dashboard /api/session issues operator session ($SCODE)"
+DCODE=$(curl -s -o /dev/null -w "%{http_code}" -b "$COOKIES" http://localhost:3000/ || echo 000)
+[ "$DCODE" = "200" ] && pass "dashboard 200 with session" || fail "dashboard 200 with session ($DCODE)"
+DPROXY=$(curl -s -o /dev/null -w "%{http_code}" -b "$COOKIES" http://localhost:3000/api/nexus/system/health || echo 000)
+[ "$DPROXY" = "200" ] && pass "dashboard proxy 200 with session" || fail "dashboard proxy 200 with session ($DPROXY)"
+rm -f "$COOKIES"
 
 # ---------- check 6: Engine 6 auto-investigations from alerts ----------
 NALERTS=$(psql_ "SELECT COUNT(*) FROM alerts WHERE record->'facts'->>'tx_hash' IS NOT NULL OR record->'facts'->'evidence'->0->>'tx_hash' IS NOT NULL")
