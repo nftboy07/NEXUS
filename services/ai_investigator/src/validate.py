@@ -8,7 +8,8 @@ from report_schema import InvestigationReport
 
 
 def validate(report: InvestigationReport, package: EvidencePackage) -> tuple[bool, list[str]]:
-    citable = {(c["tx_hash"].lower(), int(c["block_number"])) for c in package.citable}
+    citable = {(c["tx_hash"].lower(), int(c["block_number"])) for c in package.citable
+               if c.get("tx_hash") and c.get("block_number") is not None}
     problems: list[str] = []
     for c in report.citations:
         if (c.tx_hash.lower(), c.block_number) not in citable:

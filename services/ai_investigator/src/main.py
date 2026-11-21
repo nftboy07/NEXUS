@@ -13,10 +13,14 @@ import psycopg
 
 
 def _log():
+    std = set(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
+
     class F(logging.Formatter):
         def format(self, r):
+            extra = {k: v for k, v in vars(r).items() if k not in std}
             return json.dumps({"ts": self.formatTime(r), "level": r.levelname.lower(),
-                               "logger": "ai_investigator", "msg": r.getMessage()})
+                               "logger": "ai_investigator", "msg": r.getMessage(), **extra},
+                              default=str)
     lg = logging.getLogger("ai_investigator")
     h = logging.StreamHandler(); h.setFormatter(F()); lg.handlers = [h]; lg.setLevel("INFO")
     return lg

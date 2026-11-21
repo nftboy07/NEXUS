@@ -34,9 +34,13 @@ class FakeConn:
     WALLETS = {"0xalice": {"label": "alice-lab", "label_source": "manual"}}
     SCORES = {}
     RELATIONS = []
+    ALERTS = []
 
     def execute(self, sql, params=()):
         s = " ".join(sql.split())
+        if "FROM alerts" in s:
+            return FakeCursor([a for a in self.ALERTS if params[1] == "0xtx1"],
+                              ["id", "source_engine", "kind", "record"])
         if "FROM transactions" in s:
             return FakeCursor([self.TX] if params[1] == "0xtx1" else [],
                               ["hash", "sender", "recipient", "value", "status", "block_number", "nonce"])
@@ -62,6 +66,12 @@ class FakeConn:
 
     def commit(self):
         pass
+
+
+@pytest.fixture(autouse=True)
+def _llm_env(monkeypatch):
+    monkeypatch.setenv("LLM_BASE_URL", "https://llm.invalid/v1")
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
 
 
 @pytest.fixture

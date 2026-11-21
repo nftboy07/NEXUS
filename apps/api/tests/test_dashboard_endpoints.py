@@ -34,7 +34,7 @@ def test_investigations_list_and_create(client, conn, monkeypatch):
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     r = client.post("/investigations", json={"chain_id": 1, "tx_hash": "0xtx"}, headers=AUTH)
     assert r.status_code == 201
-    assert r.json()["status"] == "awaiting_model"  # no LLM configured -> never fabricates
+    assert r.json()["status"] == "queued"  # worker builds the package; no report fabricated here
     assert client.get("/investigations", headers=AUTH).json()
     assert client.get("/investigations/999", headers=AUTH).status_code == 404
     assert client.post("/investigations", json={"chain_id": 1}, headers=AUTH).status_code == 422

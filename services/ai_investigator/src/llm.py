@@ -1,7 +1,12 @@
-"""Provider-agnostic LLM client over httpx: LLM_API_KEY/LLM_MODEL from env,
-one request (60s timeout) + exactly one retry on transport error. No
-provider SDKs, no hardcoded models or prices. ModelNotConfigured when no
-key — the caller treats that as package-only mode.
+"""Provider-agnostic LLM client over httpx: OpenAI-compatible
+chat/completions at LLM_BASE_URL (e.g. a free local Ollama at
+http://ollama:11434/v1) with LLM_API_KEY/LLM_MODEL from env; one request
+(60s timeout) + exactly one retry on transport error. No provider SDKs, no
+hardcoded endpoints, models or prices. ModelNotConfigured when key, model
+or base URL is unset — the caller treats that as package-only mode.
+
+LLM_PROVIDER=deterministic selects the offline template provider
+(deterministic.py) instead: no HTTP at all.
 
 Interface seam: call_model(prompt, package_json, transport=None) — tests
 inject a transport, never a live provider.
@@ -12,6 +17,20 @@ import os
 from typing import Optional
 
 import httpx
+
+
+DETERMINISTIC = "deterministic"
+
+
+def provider() -> str:
+    return (os.getenv("LLM_PROVIDER") or "openai_compatible").strip().lower()
+
+
+def model_configured() -> bool:
+    """True when finish_investigation would produce a report (not awaiting_model)."""
+    if provider() == DETERMINISTIC:
+        return True
+    return bool(os.getenv("LLM_API_KEY") and os.getenv("LLM_MODEL") and os.getenv("LLM_BASE_URL"))
 
 
 class ModelNotConfigured(Exception):
@@ -28,6 +47,7 @@ def call_model(
     transport: Optional[httpx.BaseTransport] = None,
     model: Optional[str] = None,
     api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
 ) -> dict:
     """Returns {"content": str, "input_tokens": int|None, "output_tokens": int|None, "model": str}."""
     key = api_key if api_key is not None else os.getenv("LLM_API_KEY")
@@ -36,6 +56,10 @@ def call_model(
         raise ModelNotConfigured("LLM_API_KEY unset")
     if not mdl:
         raise ModelNotConfigured("LLM_MODEL unset")
+    base = base_url if base_url is not None else os.getenv("LLM_BASE_URL")
+    if not base:
+        raise ModelNotConfigured("LLM_BASE_URL unset")
+    url = base.rstrip("/") + "/chat/completions"
 
     body = {
         "model": mdl,
@@ -49,7 +73,7 @@ def call_model(
     with httpx.Client(transport=transport, timeout=60) as client:
         for _attempt in range(2):  # one try + exactly one retry
             try:
-                r = client.post("https://llm.invalid/v1/chat/completions", json=body, headers=headers)
+                r = client.post(url, json=body, headers=headers)
                 r.raise_for_status()
                 data = r.json()
                 usage = data.get("usage") or {}

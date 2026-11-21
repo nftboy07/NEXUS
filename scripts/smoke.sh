@@ -58,8 +58,9 @@ declare -A PROBES=(
   [009]="SELECT attname FROM pg_attribute WHERE attrelid='pending_transactions'::regclass AND attname='included_block_hash'"
   [010]="SELECT to_regclass('alert_deliveries')"
   [011]="SELECT attname FROM pg_attribute WHERE attrelid='investigations'::regclass AND attname='updated_at'"
+  [012]="SELECT attname FROM pg_attribute WHERE attrelid='investigations'::regclass AND attname='source_alert_id'"
 )
-for m in 001 002 003 004 005 006 007 008 009 010 011; do
+for m in 001 002 003 004 005 006 007 008 009 010 011 012; do
   out=$(psql_ "${PROBES[$m]}")
   [ -n "$out" ] && [ "$out" != "" ] && pass "migration $m applied" || fail "migration $m applied (probe: ${PROBES[$m]})"
 done
@@ -132,6 +133,22 @@ done
 [ "$CODE" = "200" ] && pass "api /health 200" || fail "api /health 200 ($CODE)"
 DCODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ || echo 000)
 [ "$DCODE" = "200" ] && pass "dashboard 200" || fail "dashboard 200 ($DCODE)"
+
+# ---------- check 5: Engine 6 auto-investigations from alerts ----------
+NALERTS=$(psql_ "SELECT COUNT(*) FROM alerts WHERE record->'facts'->>'tx_hash' IS NOT NULL OR record->'facts'->'evidence'->0->>'tx_hash' IS NOT NULL")
+if [ "${NALERTS:-0}" -gt 0 ]; then
+  NINV=0
+  for i in $(seq 1 20); do
+    NINV=$(psql_ "SELECT COUNT(*) FROM investigations WHERE source_alert_id IS NOT NULL AND evidence IS NOT NULL")
+    [ "${NINV:-0}" -gt 0 ] && break
+    sleep 3
+  done
+  info "  tx-bearing alerts=$NALERTS auto investigations with evidence=$NINV"
+  psql_ "SELECT id, status, trigger_tx, citations_valid FROM investigations WHERE source_alert_id IS NOT NULL ORDER BY id LIMIT 5"
+  [ "${NINV:-0}" -gt 0 ] && pass "engine 6 investigations created from alerts" || fail "engine 6 investigations created from alerts"
+else
+  info "check 5 skipped: no tx-bearing alerts yet (no whale/liquidity/MEV alert fired)"
+fi
 
 echo "----------------------------------------"
 echo "smoke duration: $(( $(date +%s) - START ))s, failures: $FAILURES"

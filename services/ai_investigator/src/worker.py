@@ -4,7 +4,8 @@ path as the CLI. Claims are atomic (FOR UPDATE SKIP LOCKED) so N workers
 never process the same row. Without a configured model, rows land back
 at 'awaiting_model' with zero HTTP calls; on startup with a model,
 awaiting_model rows are re-queued. Rows stuck 'running' >10 min are
-re-queued (crashed worker)."""
+re-queued (crashed worker). Unless INVESTIGATOR_AUTO_TRIGGER=false, each
+loop first enqueues investigations for new Stage A alerts (triggers.py)."""
 from __future__ import annotations
 
 import logging
@@ -15,7 +16,9 @@ from typing import Optional
 import httpx
 
 from investigate import finish_investigation
+from llm import model_configured
 from package import build_package
+from triggers import auto_enabled, enqueue_from_alerts
 
 POLL_ENV = "INVESTIGATOR_POLL_SECONDS"
 DEFAULT_POLL = 10.0
@@ -70,12 +73,15 @@ def tick(conn, log: logging.Logger, transport: Optional[httpx.BaseTransport] = N
 def run_worker(conn, log: logging.Logger,
                transport: Optional[httpx.BaseTransport] = None) -> None:
     poll = float(os.getenv(POLL_ENV, DEFAULT_POLL))
-    model_ready = bool(os.getenv("LLM_API_KEY") and os.getenv("LLM_MODEL"))
+    model_ready = model_configured()
+    auto = auto_enabled()
     rq = requeue(conn, model_ready)
     log.info("worker startup", extra={"poll_seconds": poll, "model_configured": model_ready,
-                                      "requeued": rq})
+                                      "auto_trigger": auto, "requeued": rq})
     while True:
         try:
+            if auto:
+                enqueue_from_alerts(conn, log)
             if not tick(conn, log, transport=transport):
                 time.sleep(poll)
         except Exception as e:

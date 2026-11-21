@@ -16,7 +16,8 @@ import httpx
 import psycopg
 
 from cost import cost_estimate
-from llm import ModelError, ModelNotConfigured, call_model
+import deterministic
+from llm import DETERMINISTIC, ModelError, ModelNotConfigured, call_model, provider
 from package import build_package
 from report_schema import InvestigationReport
 from validate import validate
@@ -77,6 +78,10 @@ def finish_investigation(
     """LLM call + validation + storage for an existing investigations row
     whose evidence package is `pkg` (used by the CLI path and the worker)."""
     log = log or logging.getLogger("ai_investigator")
+    if provider() == DETERMINISTIC:
+        report = deterministic.build_report(pkg)
+        return _store_report(conn, inv_id, pkg, report, log,
+                             input_tokens=0, output_tokens=0, model=deterministic.MODEL_NAME)
     prompt = PROMPT_PATH.read_text() + OUTPUT_FORMAT
     try:
         resp = call_model(prompt, pkg.model_dump_json(), transport=transport,
@@ -102,6 +107,12 @@ def finish_investigation(
         conn.commit()
         return inv_id
 
+    return _store_report(conn, inv_id, pkg, report, log, input_tokens=resp["input_tokens"],
+                         output_tokens=resp["output_tokens"], model=resp["model"], cost=cost)
+
+
+def _store_report(conn, inv_id: int, pkg, report: InvestigationReport, log: logging.Logger,
+                  input_tokens, output_tokens, model: str, cost=None) -> int:
     ok, problems = validate(report, pkg)
     status = "complete" if ok else "validation_failed"
     _update(
@@ -109,12 +120,13 @@ def finish_investigation(
         report=json.dumps({"report": report.model_dump(), "validation_problems": problems,
                            "unverified": not ok}),
         citations_valid=ok,
-        input_tokens=resp["input_tokens"],
-        output_tokens=resp["output_tokens"],
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
         cost_estimate=cost,
-        model=resp["model"],
+        model=model,
         findings="; ".join(f.statement for f in report.findings[:3]),
     )
     conn.commit()
-    log.info("investigation stored", extra={"id": inv_id, "status": status, "cost": cost})
+    log.info("investigation stored", extra={"id": inv_id, "status": status, "cost": cost,
+                                            "citations": len(report.citations)})
     return inv_id
