@@ -66,6 +66,12 @@ class FakeStore:
     def failed_tx_count(self, chain_id, sender):
         return self.failed.get((chain_id, sender))
 
+    def failed_tx_counts(self, chain_id):
+        return {s: n for (c, s), n in self.failed.items() if c == chain_id}
+
+    def transfer_chain_ids(self):
+        return sorted({t.chain_id for t in self.transfers})
+
     def known_pool_addresses(self, chain_id):
         return self.pools
 
@@ -82,12 +88,28 @@ class FakeStore:
         self.scores[(address, chain_id)] = {"score": score, "coverage": coverage, "components": components}
 
     def upsert_relation(self, a, b, chain_id, signals, confidence, alternatives):
-        self.relations[tuple(sorted([a, b])) + [chain_id]] = {
+        self.relations[tuple(sorted([a, b])) + (chain_id,)] = {
             "signals": signals, "confidence": confidence, "alternatives": alternatives,
         }
 
+    def prune_scores(self, chain_id, keep):
+        drop = [k for k in self.scores if k[1] == chain_id and k[0] not in set(keep)]
+        for k in drop:
+            del self.scores[k]
+        return len(drop)
+
+    def prune_relations(self, chain_id, keep):
+        keep = {tuple(sorted(p)) for p in keep}
+        drop = [k for k in self.relations if k[2] == chain_id and (k[0], k[1]) not in keep]
+        for k in drop:
+            del self.relations[k]
+        return len(drop)
+
     def commit(self):
         self.commits += 1
+
+    def rollback(self):
+        pass
 
     def close(self):
         pass

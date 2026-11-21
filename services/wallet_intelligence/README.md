@@ -58,11 +58,35 @@ threshold equality (`>=`); one wei below does not alert. Watchlists add
 hash, block, sender/recipient, token, amount and the valuation source — token
 units, with no external price source.
 
+## Score / relation refresh (live)
+
+Every `SCORE_REFRESH_SECONDS` the worker refreshes **every chain present in
+`wallet_transfers`** (not just chain 1): one O(rows) pass scores every wallet
+and commits, then the relation pass runs and commits separately. While the
+table is still empty the refresh retries every 30 s, so the first scores
+appear one interval after transfers start. A failing chain is rolled back and
+logged (`score refresh failed`); it never stops the consumer loop. Each run
+logs `score refresh` with transfers, wallets, wallets_with_score, relations,
+candidate_pairs, hub_groups_skipped and timings.
+
+No watchlist is required: scores and relations are computed from stored
+transfers alone (watchlists only add whale-alert rules).
+
+Relations evaluate only candidate pairs that share a funder, a direct
+transfer, or a same-token block bucket (any ≥2-signal pair has one of these,
+so none is missed). Groups larger than `MAX_GROUP_SIZE` (50) — routers, the
+mint address, a token bucket with hundreds of recipients — are not expanded
+into pairs (that is the "common infrastructure" alternative, not a clue);
+those pairs can still surface via a direct transfer.
+
 ## Hypothesis language rules
 
 A relation is emitted only with ≥2 independent signal types (shared funding
 source, same-token transfers within a block window, direct prior interaction,
-repeated similar timing/size). Output always includes evidence (tx hashes) and
+repeated similar timing/size). Signals must be independent: `same_token_window`
+only counts inbound pairs from two distinct senders, excluding both wallets and
+any shared funder, so one sender paying both wallets (or a direct a→b transfer)
+is never counted twice. Output always includes evidence (tx hashes) and
 alternative explanations (exchange batching, common infrastructure,
 coincidence), serialized as `related_wallet_hypothesis`. Never "same owner" or
 "controlled by".

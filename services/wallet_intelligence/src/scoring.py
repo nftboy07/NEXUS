@@ -104,6 +104,8 @@ def _behavioral_reliability(rows: list[dict], failed_count: Optional[int]) -> tu
     return 1.0 - failed_count / total, {
         "txs_observed": len(tx_hashes),
         "failed_txs": failed_count,
+        "observability": "transactions rows exist only for txs that emitted ingested logs; "
+                         "reverted txs emit no logs, so failed_txs is a lower bound",
     }
 
 

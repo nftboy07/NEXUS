@@ -19,12 +19,17 @@ class WalletStore(Protocol):
     def delete_transfers_by_block(self, chain_id: int, block_hash: str) -> int: ...
     def alert_keys_referencing(self, needle: str) -> list[str]: ...
     def failed_tx_count(self, chain_id: int, sender: str) -> Optional[int]: ...
+    def failed_tx_counts(self, chain_id: int) -> dict[str, int]: ...
+    def transfer_chain_ids(self) -> list[int]: ...
     def known_pool_addresses(self, chain_id: int) -> set[str]: ...
     def has_alert(self, dedup_key: str) -> bool: ...
     def insert_alert(self, destination: str, message: str) -> None: ...
     def upsert_score(self, address: str, chain_id: int, score, coverage, components) -> None: ...
     def upsert_relation(self, a: str, b: str, chain_id: int, signals, confidence, alternatives) -> None: ...
+    def prune_scores(self, chain_id: int, keep: list[str]) -> int: ...
+    def prune_relations(self, chain_id: int, keep: list[tuple[str, str]]) -> int: ...
     def commit(self) -> None: ...
+    def rollback(self) -> None: ...
     def close(self) -> None: ...
 
 
@@ -84,11 +89,30 @@ class PgWalletStore:
         return (row[0], row[1]) if row else (None, None)
 
     def failed_tx_count(self, chain_id: int, sender: str) -> Optional[int]:
+        """Reverted txs sent by `sender`; None when no transactions rows exist
+        for it (unobserved, not zero)."""
         cur = self.conn.execute(
-            "SELECT COUNT(*) FROM transactions WHERE chain_id = %s AND sender = %s AND status = 'reverted'",
+            "SELECT COUNT(*), COUNT(*) FILTER (WHERE status = 'reverted') "
+            "FROM transactions WHERE chain_id = %s AND sender = %s",
             (chain_id, sender),
         )
-        return cur.fetchone()[0]
+        total, reverted = cur.fetchone()
+        return reverted if total else None
+
+    def failed_tx_counts(self, chain_id: int) -> dict[str, int]:
+        """sender -> reverted tx count, for every sender with transactions
+        rows on the chain. Absent key = unobserved (None), not zero."""
+        cur = self.conn.execute(
+            "SELECT lower(sender), COUNT(*) FILTER (WHERE status = 'reverted') "
+            "FROM transactions WHERE chain_id = %s AND sender IS NOT NULL GROUP BY 1",
+            (chain_id,),
+        )
+        return {r[0]: r[1] for r in cur.fetchall()}
+
+    def transfer_chain_ids(self) -> list[int]:
+        cur = self.conn.execute(
+            "SELECT DISTINCT chain_id FROM wallet_transfers WHERE chain_id IS NOT NULL ORDER BY 1")
+        return [r[0] for r in cur.fetchall()]
 
     def known_pool_addresses(self, chain_id: int) -> set[str]:
         try:
@@ -148,8 +172,30 @@ class PgWalletStore:
              json.dumps(signals), confidence, json.dumps(alternatives)),
         )
 
+    def prune_scores(self, chain_id: int, keep: list[str]) -> int:
+        """Drop scores for wallets no longer backed by stored transfers (e.g.
+        after a reorg deleted their rows)."""
+        cur = self.conn.execute(
+            "DELETE FROM wallet_scores WHERE chain_id = %s AND NOT (address = ANY(%s))",
+            (chain_id, list(keep)),
+        )
+        return cur.rowcount
+
+    def prune_relations(self, chain_id: int, keep: list[tuple[str, str]]) -> int:
+        """Drop hypotheses the latest full recompute no longer supports;
+        surviving rows keep their original created_at."""
+        keys = [f"{a}|{b}" for a, b in keep]
+        cur = self.conn.execute(
+            "DELETE FROM wallet_relations WHERE chain_id = %s AND NOT (address_a || '|' || address_b = ANY(%s))",
+            (chain_id, keys),
+        )
+        return cur.rowcount
+
     def commit(self) -> None:
         self.conn.commit()
+
+    def rollback(self) -> None:
+        self.conn.rollback()
 
     def close(self) -> None:
         self.conn.close()
