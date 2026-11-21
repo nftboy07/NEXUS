@@ -123,3 +123,9 @@ def test_refresh_scales_to_live_stream_volume(store):
     assert n > 2500
     assert time.monotonic() - t < 20  # was O(wallets^2 x rows): hours at this size
     assert len(store.scores) == n
+
+
+def test_refresh_delay_short_during_warmup_or_when_empty():
+    assert main.next_refresh_delay(5, now=10, warmup_until=300, refresh_secs=300) == main.EMPTY_RETRY_SECONDS
+    assert main.next_refresh_delay(0, now=900, warmup_until=300, refresh_secs=300) == main.EMPTY_RETRY_SECONDS
+    assert main.next_refresh_delay(5, now=900, warmup_until=300, refresh_secs=300) == 300

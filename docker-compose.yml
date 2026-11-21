@@ -9,6 +9,12 @@ services:
     volumes:
       - nexus_pg:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # -h 127.0.0.1: the initdb temp server is socket-only, so this passes only once migrations finished
+      test: ["CMD-SHELL", "pg_isready -U nexus -d nexus -h 127.0.0.1"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
   redis:
     image: redis:7
     ports: ["6379:6379"]
@@ -21,7 +27,9 @@ services:
     environment:
       DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
       REDIS_URL: redis://redis:6379
-    depends_on: [postgres, redis]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
     restart: unless-stopped
 
   mempool_listener:
@@ -32,7 +40,9 @@ services:
     environment:
       DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
       REDIS_URL: redis://redis:6379
-    depends_on: [postgres, redis]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
     restart: unless-stopped
 
   dex_monitor:
@@ -43,7 +53,9 @@ services:
     environment:
       DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
       REDIS_URL: redis://redis:6379
-    depends_on: [postgres, redis]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
     restart: unless-stopped
 
   wallet_intelligence:
@@ -52,7 +64,9 @@ services:
     environment:
       DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
       REDIS_URL: redis://redis:6379
-    depends_on: [postgres, redis]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
     restart: unless-stopped
 
   alert_dispatcher:
@@ -61,7 +75,9 @@ services:
     environment:
       DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
       REDIS_URL: redis://redis:6379
-    depends_on: [postgres, redis]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
     restart: unless-stopped
 
   ai_investigator:
@@ -70,7 +86,9 @@ services:
     environment:
       DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
       REDIS_URL: redis://redis:6379
-    depends_on: [postgres, redis]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
     restart: unless-stopped
     command: ["python", "src/main.py", "--worker"]
 
@@ -80,7 +98,9 @@ services:
     environment:
       DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
       REDIS_URL: redis://redis:6379
-    depends_on: [postgres, redis]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
     restart: unless-stopped
     command: ["python", "src/main.py", "--loop"]
 
@@ -93,7 +113,9 @@ services:
       DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
       REDIS_URL: redis://redis:6379
     ports: ["8000:8000"]
-    depends_on: [postgres, redis]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
     restart: unless-stopped
 
   dashboard:

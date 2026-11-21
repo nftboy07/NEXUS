@@ -111,6 +111,15 @@ def refresh_all(store, log: logging.Logger) -> int:
     return total
 
 
+def next_refresh_delay(scored: int, now: float, warmup_until: float, refresh_secs: int) -> float:
+    """Short retry while nothing is scored or during startup warm-up, so a
+    chain whose first transfers arrive after the first refresh is scored
+    within EMPTY_RETRY_SECONDS instead of a full interval."""
+    if not scored or now < warmup_until:
+        return min(refresh_secs, EMPTY_RETRY_SECONDS)
+    return refresh_secs
+
+
 def main() -> None:
     log = json_logger("wallet_intelligence")
     r = redis.from_url(os.environ["REDIS_URL"], decode_responses=False)
@@ -138,6 +147,7 @@ def main() -> None:
 
     refresh_secs = int(os.getenv("SCORE_REFRESH_SECONDS", "300"))
     next_refresh = 0.0
+    warmup_until = time.time() + refresh_secs
     last_heartbeat = 0.0
     processed = 0
     log.info("wallet_intelligence started", extra={"group": GROUP, "stream": EVENTS_STREAM})
@@ -149,9 +159,7 @@ def main() -> None:
             last_heartbeat = now
         if now >= next_refresh:
             n = refresh_all(store, log)
-            # Nothing stored yet (fresh stack): retry soon instead of idling
-            # a full interval before the first scores can appear.
-            next_refresh = now + (refresh_secs if n else min(refresh_secs, EMPTY_RETRY_SECONDS))
+            next_refresh = now + next_refresh_delay(n, now, warmup_until, refresh_secs)
     store.close()
     log.info("wallet_intelligence stopped")
 
