@@ -3,6 +3,7 @@ emit alerts for high-confidence findings only (alerts row + nexus:alerts),
 and keep run stats."""
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 
@@ -14,12 +15,14 @@ ALERTS_DESTINATION = "nexus:alerts"
 @dataclass
 class RunStats:
     blocks_analyzed: int = 0
+    swap_legs: int = 0
     findings: dict[str, int] = field(default_factory=dict)
     insufficient_evidence: int = 0
 
     def summary(self) -> dict:
         return {
             "blocks_analyzed": self.blocks_analyzed,
+            "swap_legs": self.swap_legs,
             "findings": self.findings,
             "insufficient_evidence": self.insufficient_evidence,
         }
@@ -35,17 +38,21 @@ def emit_finding_alert(store, redis_xadd, f: Finding, log: logging.Logger) -> bo
         "kind": f.kind,
         "chain_id": f.chain_id,
         "title": f"NEXUS by Crypto Relic — {f.kind} on chain {f.chain_id}",
-        "facts": {"evidence": f.evidence, "estimated_impact": f.estimated_impact},
-        "assessment": {"confidence": f.confidence.level, "rationale": f.confidence.rationale},
+        "facts": {"block_number": f.block_number, "initiator": f.initiator, "victim": f.victim,
+                  "pool_id": f.pool_id, "evidence": f.evidence, "estimated_impact": f.estimated_impact,
+                  "rationale": f.confidence.rationale},
+        "assessment": {"confidence": f.confidence.level},
         "dedup_key": dedup_key,
     }
-    import json
-    if not store.insert_alert(record, json.dumps(record)):
+    message = json.dumps(record)
+    if not store.insert_alert(record, message):
         return False
     if redis_xadd is not None:
-        redis_xadd("nexus:alerts", {k: json.dumps(v) if isinstance(v, (dict, list)) else str(v)
-                                  for k, v in record.items()})
-    log.warning("mev alert emitted", extra={"kind": f.kind, "dedup_key": dedup_key})
+        # same field shape as the other engines; alert_dispatcher reads 'record'
+        redis_xadd(ALERTS_DESTINATION, {"dedup_key": dedup_key, "source_engine": "mev_analyzer",
+                                        "kind": f.kind, "chain_id": str(f.chain_id), "record": message})
+    if log:
+        log.warning("mev alert emitted", extra={"kind": f.kind, "dedup_key": dedup_key})
     return True
 
 

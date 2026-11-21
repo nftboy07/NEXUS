@@ -1,46 +1,50 @@
-"""Cyclic arbitrage: same-block, same-sender trades across >=2 known pools
-whose net token deltas are positive in the start token. Fees are ignored —
-the profit figure is labeled an estimate with fees excluded."""
+"""Cyclic arbitrage: one tx swapping through >=2 registered pools whose
+per-token net (out - in, using each pool's token0/token1) is never negative
+and positive for at least one token — a closed cycle that ends with more of
+some token than it started. Ordinary multi-hop swaps spend their input token
+(negative net) and are not flagged. Only legs on registered pools are seen,
+so cycles through unregistered pools are missed, never guessed. Fees and gas
+are excluded — the profit figure is an estimate."""
 from __future__ import annotations
 
 from models import Confidence, Finding
 
 
-def find_arbitrage(swaps: list[dict], known_pools: set[str]) -> list[Finding]:
-    """swaps: rows {tx_hash, sender, pool_id, amount0, amount1, block_number}."""
-    by_sender: dict[str, list[dict]] = {}
-    for s in swaps:
-        if s.get("sender") and s["pool_id"] in known_pools:
-            by_sender.setdefault(s["sender"], []).append(s)
+def find_arbitrage(legs: list[dict], chain_id: int) -> list[Finding]:
+    by_tx: dict[str, list[dict]] = {}
+    for leg in legs:
+        by_tx.setdefault(leg["tx_hash"], []).append(leg)
 
     findings: list[Finding] = []
-    for sender, legs in by_sender.items():
-        pools = {l["pool_id"] for l in legs}
-        if len(pools) < 2:
+    for tx, tl in by_tx.items():
+        pools = sorted({l["pool_id"] for l in tl})
+        sender = tl[0].get("sender")
+        if len(pools) < 2 or not sender or any(not l.get("token0") or not l.get("token1") for l in tl):
             continue
-        # Net input-side delta proxy: sum(amount0) - sum(amount1) across legs
-        # (a crude delta; labeled an estimate).
-        net0 = sum(int(l["amount0"] or 0) - int(l["amount1"] or 0) for l in legs)
-        if net0 <= 0:
+        net: dict[str, int] = {}
+        for l in tl:
+            for side in (0, 1):
+                tok = l[f"token{side}"].lower()
+                net[tok] = net.get(tok, 0) + int(l[f"amount{side}_out"]) - int(l[f"amount{side}_in"])
+        if any(v < 0 for v in net.values()) or not any(v > 0 for v in net.values()):
             continue
-        chain_id = int(str(next(iter(pools))).split(":")[0])
-        block = int(legs[0]["block_number"])
         findings.append(Finding(
             kind="cyclic_arbitrage",
             chain_id=chain_id,
-            block_number=block,
+            block_number=int(tl[0]["block_number"]),
             initiator=sender,
             victim=None,
-            pool_id=None,
-            evidence=[{"tx_hash": l["tx_hash"], "block_number": l["block_number"], "pool_id": l["pool_id"]} for l in legs],
+            pool_id=",".join(pools),
+            evidence=[{"tx_hash": l["tx_hash"], "block_number": l["block_number"], "log_index": l["log_index"],
+                       "pool_id": l["pool_id"]} for l in sorted(tl, key=lambda x: x["log_index"])],
             estimated_impact={
-                "net_token_delta_estimate": net0,
-                "note": "estimate only; gas and LP fees excluded",
+                "net_token_delta_estimate": {k: str(v) for k, v in sorted(net.items()) if v},
+                "note": "estimate only, raw token units; gas and LP fees excluded",
             },
             confidence=Confidence(
                 level="medium",
-                rationale="same-sender multi-pool trading in one block with positive "
-                          "net token delta (fees excluded) — consistent with cyclic arbitrage",
+                rationale="one tx trading a closed cycle across registered pools with non-negative "
+                          "net in every token and positive net in at least one (fees excluded)",
             ),
         ))
     return findings

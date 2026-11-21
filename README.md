@@ -65,9 +65,10 @@ docker compose up -d                  # api, dashboard, all engine daemons
 # dashboard -> http://localhost:3000, API -> http://localhost:8000/health
 ```
 
-Batch/CLI services run on demand, not as daemons: `mev_analyzer`
-(`python src/main.py` in its venv) and `ai_investigator`
-(`python src/main.py --chain 1 --tx 0x…`).
+`mev_analyzer` runs as a cursor-driven compose service (`--loop`, one pass
+every `MEV_INTERVAL_SECONDS`); explicit ranges:
+`docker compose run --rm mev_analyzer python src/main.py --chain 1 --from-block A --to-block B`.
+`ai_investigator` also has a CLI (`python src/main.py --chain 1 --tx 0x…`).
 
 ### Running the test suites
 
@@ -92,7 +93,7 @@ Batch/CLI services run on demand, not as daemons: `mev_analyzer`
 | Engine 2 mempool | ✅ | ✅ | ✅ pending txs stored from public WSS (eth + Base) |
 | Engine 3 wallet intel | ✅ | ✅ | ⚠️ transfers, wallet scores (partial coverage: no prices → no realized/risk-adjusted perf) and relation hypotheses computed live on eth + Base (`scripts/smoke.sh` check 5) |
 | Engine 4 DEX radar | ✅ | ✅ | ✅ pinned pools, liquidity events + reserves stored live |
-| Engine 5 MEV | ✅ | ✅ | ❌ batch job, not in compose; not run live |
+| Engine 5 MEV | ✅ | ✅ | ⚠️ compose loop service live on eth + Base; 1 `potential_sandwich` written from live-ingested Ethereum data (block 26456257); no arbitrage/liquidation findings yet; Base window had no sandwich-shaped blocks |
 | Engine 6 AI investigator | ✅ | ✅ (fake provider) | ⚠️ worker auto-investigates live whale alerts (eth + Base) with the `deterministic` provider, citations validated; no real LLM run yet |
 | Engine 7 dispatcher/API | ✅ | ✅ (HTTP fakes) | ⚠️ log-only delivery + API `/health` live; no real Telegram/Discord |
 | Dashboard | ✅ | ✅ | ✅ production build serves 200 |

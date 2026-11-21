@@ -12,7 +12,7 @@ submission, no bundle building, no trading.
 
 | kind | rule | threshold |
 |---|---|---|
-| `potential_sandwich` | same pool: initiator swap → victim swap same direction → initiator swap back, all in one block; front-leg price move ≥ `MEV_MIN_VICTIM_IMPACT_PCT` (default 0.5) vs pre-trade reserves | labeled a *resemblance*, never proven intent; missing reserves → not emitted, counted insufficient |
+| `potential_sandwich` | same pool: initiator swap → victim swap same direction → initiator swap back, all in one block; front-leg price move ≥ `MEV_MIN_VICTIM_IMPACT_PCT` (default 0.1; bots size the front leg under the victim's slippage tolerance, commonly 0.5%, so a 0.5% floor misses them) vs pre-trade reserves | labeled a *resemblance*, never proven intent; missing reserves → not emitted, counted insufficient |
 | `cyclic_arbitrage` | same sender, ≥2 known pools, one block, positive net token delta | fees excluded — profit figure is an estimate |
 | `liquidation` | `LiquidationCall` logs from configured Aave V2/V3 pools (`src/protocols.json`, sources cited). Compound `LiquidateBorrow` emits from per-market cTokens — not configured, so not covered | observed events → high confidence |
 | `gas_outlier` | priority fee > block p95 × 3 | statistical observation only; requires a `priority_fee` field that `transactions` does not yet store — produces nothing until Engine 1 stores it |
@@ -34,7 +34,7 @@ export REDIS_URL=redis://localhost:6379   # optional, for nexus:alerts
 python src/main.py                        # prints run stats
 ```
 
-Env: `MEV_CHAIN_IDS` (`1,8453`), `MEV_MIN_VICTIM_IMPACT_PCT` (`0.5`),
+Env: `MEV_CHAIN_IDS` (`1,8453`), `MEV_MIN_VICTIM_IMPACT_PCT` (`0.1`),
 `MEV_BATCH_BLOCKS` (500 — first-run lookback when no cursor),
 `PROTECTION_MAX_RESERVE_AGE_BLOCKS` (100). High-confidence findings write
 an `alerts` row + `nexus:alerts` record (dedup_key'd).
