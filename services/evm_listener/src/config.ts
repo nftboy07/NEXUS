@@ -75,3 +75,35 @@ export function loadChainConfigs(
   }
   return out;
 }
+
+function intEnv(env: NodeJS.ProcessEnv, name: string, fallback: number, min = 1): number {
+  const raw = env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < min) throw new Error(`${name} must be a number >= ${min} (got "${raw}")`);
+  return Math.floor(n);
+}
+
+/** Backfill throughput knobs. Defaults are sized for free public RPCs
+ * (publicnode): 8 blocks in flight, <= 8 concurrent requests per chain. */
+export function backfillOptionsFromEnv(env: NodeJS.ProcessEnv = process.env) {
+  return {
+    chunkSize: intEnv(env, "BACKFILL_CHUNK_SIZE", 2000),
+    blockConcurrency: intEnv(env, "BACKFILL_BLOCK_CONCURRENCY", 8),
+    rpcConcurrency: intEnv(env, "RPC_MAX_CONCURRENCY", 8),
+  };
+}
+
+/** Tx enrichment knobs shared by backfill + live paths. */
+export function ingestOptionsFromEnv(env: NodeJS.ProcessEnv = process.env) {
+  const mode = (env.TX_ENRICH_MODE ?? "auto").toLowerCase();
+  if (mode !== "auto" && mode !== "tx" && mode !== "block") {
+    throw new Error(`TX_ENRICH_MODE must be auto|tx|block (got "${env.TX_ENRICH_MODE}")`);
+  }
+  return {
+    ingestTransactions: (env.INGEST_TRANSACTIONS ?? "true") !== "false",
+    txFetchConcurrency: intEnv(env, "TX_FETCH_CONCURRENCY", 8),
+    txEnrichMode: mode as "auto" | "tx" | "block",
+    blockEnrichThreshold: intEnv(env, "BLOCK_ENRICH_THRESHOLD", 4),
+  };
+}

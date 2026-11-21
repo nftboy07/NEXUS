@@ -48,6 +48,11 @@ export interface EventStore {
   upsertBlock(block: StoredBlock): Promise<UpsertResult>;
   upsertLog(log: StoredLog): Promise<UpsertResult>;
   upsertTransaction(tx: StoredTransaction): Promise<UpsertResult>;
+  /** Batch upsert (one round trip); results align with input order.
+   * Optional — callers fall back to per-row upsertLog. */
+  upsertLogs?(logs: StoredLog[]): Promise<UpsertResult[]>;
+  /** Batch upsertTransaction (one round trip). Optional. */
+  upsertTransactions?(txs: StoredTransaction[]): Promise<void>;
   markLogsRemoved(chainId: number, blockHash: string): Promise<number>;
   /** Insert a removed-block marker (removed_blocks); false when already present. */
   insertRemovedBlock(chainId: number, blockHash: string): Promise<boolean>;
@@ -98,6 +103,64 @@ export class PgStore implements EventStore {
        t.nonce?.toString() ?? null, t.blockHash ?? null]
     );
     return res.rowCount === 0 ? "duplicate" : "inserted";
+  }
+
+  async upsertLogs(logs: StoredLog[]): Promise<UpsertResult[]> {
+    if (logs.length === 0) return [];
+    const res = await this.pool.query(
+      `INSERT INTO logs (chain_id, block_hash, transaction_hash, log_index, contract, topics, data, removed)
+       SELECT $1, t.* FROM unnest($2::text[], $3::text[], $4::int[], $5::text[], $6::jsonb[], $7::text[], $8::bool[]) AS t
+       ON CONFLICT (chain_id, block_hash, transaction_hash, log_index) DO NOTHING
+       RETURNING block_hash, transaction_hash, log_index`,
+      [
+        logs[0].chainId,
+        logs.map((l) => l.blockHash),
+        logs.map((l) => l.transactionHash),
+        logs.map((l) => l.logIndex),
+        logs.map((l) => l.contract),
+        logs.map((l) => JSON.stringify(l.topics)),
+        logs.map((l) => l.data),
+        logs.map((l) => l.removed ?? false),
+      ]
+    );
+    const key = (b: string, t: string, i: number) => `${b}:${t}:${i}`;
+    const inserted = new Set(
+      res.rows.map((r: { block_hash: string; transaction_hash: string; log_index: number }) =>
+        key(r.block_hash, r.transaction_hash, r.log_index))
+    );
+    // A key repeated inside one batch is inserted once: only its first occurrence counts.
+    const seen = new Set<string>();
+    return logs.map((l) => {
+      const k = key(l.blockHash, l.transactionHash, l.logIndex);
+      const first = !seen.has(k);
+      seen.add(k);
+      return first && inserted.has(k) ? "inserted" : "duplicate";
+    });
+  }
+
+  async upsertTransactions(txs: StoredTransaction[]): Promise<void> {
+    // ON CONFLICT DO UPDATE rejects a key twice in one statement: last row wins.
+    const byHash = new Map(txs.map((t) => [t.hash, t]));
+    const rows = [...byHash.values()];
+    if (rows.length === 0) return;
+    await this.pool.query(
+      `INSERT INTO transactions (chain_id, hash, sender, recipient, value, status, block_number, nonce, block_hash)
+       SELECT $1, t.* FROM unnest($2::text[], $3::text[], $4::text[], $5::numeric[], $6::text[], $7::bigint[], $8::bigint[], $9::text[]) AS t
+       ON CONFLICT (chain_id, hash) DO UPDATE
+       SET nonce = COALESCE(EXCLUDED.nonce, transactions.nonce),
+           block_hash = COALESCE(EXCLUDED.block_hash, transactions.block_hash)`,
+      [
+        rows[0].chainId,
+        rows.map((t) => t.hash),
+        rows.map((t) => t.sender),
+        rows.map((t) => t.recipient),
+        rows.map((t) => t.value),
+        rows.map((t) => t.status),
+        rows.map((t) => t.blockNumber?.toString() ?? null),
+        rows.map((t) => t.nonce?.toString() ?? null),
+        rows.map((t) => t.blockHash ?? null),
+      ]
+    );
   }
 
   async existingTransactions(chainId: number, hashes: string[]): Promise<Set<string>> {

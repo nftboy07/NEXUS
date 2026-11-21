@@ -2,14 +2,23 @@
 // with eth_getLogs + block fetches in bounded chunks, then resume live subs.
 
 import { retry, type Logger } from "@nexus/shared-utils";
-import type { ChainSource, SourceLog } from "./rpc.js";
+import { RANGE_LIMIT_RE, isRateLimitError, limitSource, type ChainSource, type SourceLog } from "./rpc.js";
 import type { ParsedLogFilter } from "./subscriptions.js";
 import { advanceCheckpoint, readCheckpoint } from "./checkpoint.js";
-import { ingestBlock, ingestLogs, ingestTransactions, type IngestDeps } from "./ingest.js";
+import { commitPreparedBlock, prepareBlock, type IngestDeps, type PreparedBlock } from "./ingest.js";
 
 export interface BackfillOptions {
   chunkSize?: number; // max blocks per eth_getLogs call, default 2000
+  /** BACKFILL_BLOCK_CONCURRENCY: blocks fetched ahead of the in-order
+   * commit (header + tx enrichment), default 8. 1 = fully sequential. */
+  blockConcurrency?: number;
+  /** RPC_MAX_CONCURRENCY: cap on in-flight RPC requests per chain across the
+   * whole backfill (getLogs, blocks, txs, receipts), default 8. */
+  rpcConcurrency?: number;
 }
+
+export const DEFAULT_BLOCK_CONCURRENCY = 8;
+export const DEFAULT_RPC_CONCURRENCY = 8;
 
 export interface BackfillResult {
   fromBlock: bigint;
@@ -31,12 +40,12 @@ export function planChunks(fromExclusive: bigint, to: bigint, chunkSize: number)
   return chunks;
 }
 
-/** Provider responses that mean "your block range / result set is too big". */
-const RANGE_LIMIT_RE =
-  /more than \d+ results|range too large|too many results|limit exceeded|exceeds? (the )?max|block range|response size|query timeout/i;
+export { isRateLimitError };
 
+/** Throttling is NOT a range problem: splitting on it multiplies requests. */
 export function isRangeLimitError(err: unknown): boolean {
-  return RANGE_LIMIT_RE.test(String(err instanceof Error ? err.message : err));
+  const msg = String(err instanceof Error ? err.message : err);
+  return !isRateLimitError(err) && RANGE_LIMIT_RE.test(msg);
 }
 
 const RPC_RETRY = { baseMs: 250, capMs: 2_000, maxAttempts: 3, jitter: 0.2 };
@@ -90,7 +99,9 @@ export async function fetchFilterLogs(
 }
 
 /** Shared per-filter fetch used by backfill and per-block reconciliation:
- * one request per filter (own address + topics), results merged and sorted. */
+ * one request per filter (own address + topics), issued concurrently (the
+ * caller's source decides the RPC budget), results merged and sorted.
+ * Overlapping filters may return a log twice; the store upsert dedups. */
 export async function fetchLogs(
   source: ChainSource,
   filters: ParsedLogFilter[],
@@ -98,10 +109,8 @@ export async function fetchLogs(
   to: bigint,
   log?: Logger
 ): Promise<SourceLog[]> {
-  const out: SourceLog[] = [];
-  for (const f of filters) {
-    out.push(...(await fetchFilterLogs(source, f, from, to, log)));
-  }
+  const perFilter = await Promise.all(filters.map((f) => fetchFilterLogs(source, f, from, to, log)));
+  const out = perFilter.flat();
   out.sort((a, b) => {
     if (a.blockNumber !== b.blockNumber) return a.blockNumber < b.blockNumber ? -1 : 1;
     return a.logIndex - b.logIndex;
@@ -109,15 +118,28 @@ export async function fetchLogs(
   return out;
 }
 
-/** Backfill (checkpoint, toBlock] for one chain. Dedup via store upserts. */
+/**
+ * Backfill (checkpoint, toBlock] for one chain. Dedup via store upserts.
+ *
+ * Pipeline per chunk: getLogs for every filter (concurrent) -> up to
+ * blockConcurrency blocks prepared ahead (header + tx/receipt fetches; no
+ * writes) -> strictly in-order commit: logs stored+published, txs stored,
+ * block stored+published, THEN checkpoint = n. A failure at block n leaves
+ * the checkpoint at n-1 and nothing past it written, so a restart resumes
+ * without gaps; replays are store-level duplicates (never re-published).
+ */
 export async function backfillRange(
-  source: ChainSource,
+  rawSource: ChainSource,
   filters: ParsedLogFilter[],
   deps: IngestDeps,
   toBlock: bigint,
   opts: BackfillOptions = {}
 ): Promise<BackfillResult> {
   const chunkSize = opts.chunkSize ?? 2000;
+  const window = Math.max(1, Math.floor(opts.blockConcurrency ?? DEFAULT_BLOCK_CONCURRENCY));
+  const source = limitSource(rawSource, opts.rpcConcurrency ?? DEFAULT_RPC_CONCURRENCY, {
+    onRateLimit: (i) => deps.log.warn("rpc rate limited; backing off", i),
+  });
   const cp = await readCheckpoint(deps.store, deps.chainId);
   const fromExclusive = cp.lastBlock;
   const result: BackfillResult = {
@@ -135,6 +157,7 @@ export async function backfillRange(
     from_block: (fromExclusive + 1n).toString(),
     to_block: toBlock.toString(),
     chunks: chunks.length,
+    block_concurrency: window,
   });
 
   for (const [start, end] of chunks) {
@@ -147,18 +170,27 @@ export async function backfillRange(
     }
     const chunkStats = { inserted: 0, duplicates: 0 };
 
-    // Block-at-a-time so the checkpoint advances steadily through a large
-    // chunk (and a restart resumes mid-chunk) instead of only after every
-    // tx in the chunk has been enriched.
+    // Prefetch window: prepare(n..n+window-1) run concurrently; commits stay
+    // block-at-a-time in order so the checkpoint advances steadily through a
+    // large chunk and a restart resumes mid-chunk.
+    const inflight = new Map<bigint, Promise<PreparedBlock>>();
+    let nextPrepare = start;
+    const fill = (n: bigint) => {
+      while (nextPrepare <= end && nextPrepare < n + BigInt(window)) {
+        const p = prepareBlock(nextPrepare, byBlock.get(nextPrepare) ?? [], source, deps);
+        p.catch(() => {}); // surfaced when awaited in order; avoid unhandled rejection
+        inflight.set(nextPrepare, p);
+        nextPrepare++;
+      }
+    };
     for (let n = start; n <= end; n++) {
-      const blockLogs = byBlock.get(n) ?? [];
-      const stats = await ingestLogs(blockLogs, deps);
+      fill(n);
+      const prepared = await inflight.get(n)!;
+      inflight.delete(n);
+      const { stats, block } = await commitPreparedBlock(prepared, deps);
       chunkStats.inserted += stats.inserted;
       chunkStats.duplicates += stats.duplicates;
-      await ingestTransactions(blockLogs, source, deps);
-      const block = await source.getBlock(n);
-      const r = await ingestBlock(block, deps);
-      if (r === "inserted") result.blocksStored++;
+      if (block === "inserted") result.blocksStored++;
       // The block's checkpoint advances only after its events are stored+published.
       await advanceCheckpoint(deps.store, deps.chainId, n, null);
     }
