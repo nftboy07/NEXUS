@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NEXUS — Autonomous Blockchain Intelligence Network</title>
+  <meta name="description" content="Multi-chain blockchain intelligence: EVM ingestion, mempool, wallet, DEX and MEV analysis, evidence-backed AI investigations and alerts.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230b1020'/><path d='M8 24V8l16 16V8' stroke='%2338bdf8' stroke-width='3.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top"><span class="logo">N</span>NEXUS</a>
+    <nav>
+      <a href="#engines">Engines</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#status">Status</a>
+      <a href="#setup">Setup</a>
+      <a href="#docs">Docs</a>
+      <a class="btn btn-sm" href="https://github.com/nftboy07/NEXUS">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <p class="eyebrow">Open-source · Read-only monitoring · Ethereum + Base</p>
+      <h1>Autonomous Blockchain<br><span class="grad">Intelligence Network</span></h1>
+      <p class="lead">NEXUS listens to on-chain activity, watches visible pending transactions, profiles wallets and liquidity, detects MEV patterns, and produces alerts in which every claim cites a transaction hash, block, contract and timestamp.</p>
+      <div class="cta">
+        <a class="btn" href="#setup">Run it locally</a>
+        <a class="btn btn-ghost" href="https://github.com/nftboy07/NEXUS">View source</a>
+      </div>
+      <blockquote class="principle">Deterministic software detects and processes blockchain events. AI investigates selected, enriched events. AI never sits in the critical path of ingestion.</blockquote>
+      <ul class="stats">
+        <li><b>7</b><span>engines</span></li>
+        <li><b>2</b><span>chains live (1 · 8453)</span></li>
+        <li><b>12</b><span>idempotent migrations</span></li>
+        <li><b>29</b><span>live smoke checks</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="engines" class="section">
+    <div class="wrap">
+      <h2>The 7 engines</h2>
+      <p class="sub">Independent services joined by Redis Streams (<code>nexus:events</code>, <code>nexus:pending</code>, <code>nexus:alerts</code>) and a shared PostgreSQL store.</p>
+      <div class="grid">
+        <article class="card"><span class="num">1</span><h3>Multi-chain RPC listener</h3><p>WebSocket <code>newHeads</code>/<code>logs</code>, pipelined HTTP backfill, durable checkpoints, reorg handling and rate-limit backoff.</p><span class="tag">TypeScript · viem</span></article>
+        <article class="card"><span class="num">2</span><h3>Mempool intelligence</h3><p>Pending swap, liquidity and deployment detection with pending-to-confirmed lifecycle tracking.</p><span class="tag">TypeScript</span></article>
+        <article class="card"><span class="num">3</span><h3>Smart money &amp; whales</h3><p>Wallet behaviour profiles, Smart Money Score, accumulation/distribution and evidence-backed related-wallet hypotheses.</p><span class="tag">Python</span></article>
+        <article class="card"><span class="num">4</span><h3>DEX &amp; liquidity</h3><p>New pools, liquidity adds/removes, reserves, volume and the Liquidity Risk Radar.</p><span class="tag">TypeScript</span></article>
+        <article class="card"><span class="num">5</span><h3>MEV &amp; transactions</h3><p>Sandwich, arbitrage and liquidation patterns decoded from raw swap logs, with price-impact estimation.</p><span class="tag">Python</span></article>
+        <article class="card"><span class="num">6</span><h3>AI investigation agent</h3><p>Works only from evidence packages, validates citations, states confidence and alternatives. Offline <code>deterministic</code> provider or any OpenAI-compatible endpoint.</p><span class="tag">Python</span></article>
+        <article class="card"><span class="num">7</span><h3>Alerts &amp; API</h3><p>Dispatcher for Telegram, Discord and webhooks, a FastAPI REST API and a Next.js dashboard. Execution is not implemented.</p><span class="tag">FastAPI · Next.js</span></article>
+      </div>
+    </div>
+  </section>
+
+  <section id="architecture" class="section alt">
+    <div class="wrap two">
+      <div>
+        <h2>Architecture</h2>
+        <ol class="flow">
+          <li>A provider streams a block, log or pending transaction.</li>
+          <li>Ingestion validates it and tags network and source.</li>
+          <li>The event is normalized into <code>NexusNormalizedEvent</code>.</li>
+          <li>A deduplication key prevents double processing.</li>
+          <li>It is queued durably on Redis Streams.</li>
+          <li>Specialized workers decode, enrich, correlate and classify.</li>
+          <li>Rules and scores decide what is interesting.</li>
+          <li>Selected events go to the AI investigation agent.</li>
+          <li>Evidence-backed findings are stored and delivered.</li>
+          <li>Checkpoints allow gap-free recovery after outages.</li>
+        </ol>
+      </div>
+<pre class="diagram" aria-label="NEXUS architecture diagram">      BLOCKCHAIN NETWORKS
+   Ethereum · Base · (Arbitrum · BSC)
+                 │
+   WS newHeads/logs · HTTP backfill
+                 │
+     EVENT INGESTION LAYER
+ validate · normalize · dedupe
+  retry · checkpoint · queue
+                 │
+     EVENT PROCESSING CORE
+ decode · enrich · correlate
+                 │
+Wallet · Whale · DEX · Mempool · MEV
+                 │
+    AI INVESTIGATION AGENT
+ evidence · confidence · alternatives
+                 │
+   ALERTS AND INTERFACES
+ Dashboard · Telegram · Discord · API</pre>
+    </div>
+    <div class="wrap">
+      <div class="grid three">
+        <div class="mini"><h4>Failover</h4><p>Reconnect with backoff, switch provider, read the last checkpoint, backfill the gap over HTTP, deduplicate, resume.</p></div>
+        <div class="mini"><h4>Reorgs</h4><p>Block hashes and parent hashes are stored; removed logs invalidate and recompute derived state.</p></div>
+        <div class="mini"><h4>Stack</h4><p>TypeScript + viem, Python + FastAPI, PostgreSQL, Redis Streams, Next.js, Docker Compose.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="status" class="section">
+    <div class="wrap">
+      <h2>Status</h2>
+      <p class="sub">“Live-verified” means <code>scripts/smoke.sh</code> passes with zero failures on Docker against free public RPCs for Ethereum and Base.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Component</th><th>Fixture tests</th><th>Live-verified</th></tr></thead>
+          <tbody>
+            <tr><td>Engine 1 listener</td><td class="ok">yes</td><td><span class="pill ok">live</span> ingest, restart catch-up, dedup, no gaps, chain isolation</td></tr>
+            <tr><td>Engine 2 mempool</td><td class="ok">yes</td><td><span class="pill ok">live</span> pending txs from public WSS on both chains</td></tr>
+            <tr><td>Engine 3 wallet intel</td><td class="ok">yes</td><td><span class="pill warn">partial</span> scores and relations live; no price source yet</td></tr>
+            <tr><td>Engine 4 DEX radar</td><td class="ok">yes</td><td><span class="pill ok">live</span> pinned pools, liquidity events, reserves</td></tr>
+            <tr><td>Engine 5 MEV</td><td class="ok">yes</td><td><span class="pill warn">partial</span> live Ethereum sandwich findings; no Base, arbitrage or liquidation findings yet</td></tr>
+            <tr><td>Engine 6 AI investigator</td><td class="ok">yes</td><td><span class="pill warn">partial</span> auto-investigates live alerts with the deterministic provider; no real LLM run yet</td></tr>
+            <tr><td>Engine 7 dispatcher / API</td><td class="ok">yes</td><td><span class="pill warn">partial</span> API live; no real Telegram/Discord delivery yet</td></tr>
+            <tr><td>Dashboard</td><td class="ok">yes</td><td><span class="pill ok">live</span> production build behind an operator login</td></tr>
+            <tr><td>Execution layer</td><td>—</td><td><span class="pill off">not implemented</span> design doc only</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="setup" class="section alt">
+    <div class="wrap">
+      <h2>Run it locally</h2>
+      <p class="sub">Needs Docker with Compose. Free publicnode RPCs work for both chains.</p>
+      <div class="two">
+<pre class="code"><span class="c"># 1. configure</span>
+git clone https://github.com/nftboy07/NEXUS.git
+cd NEXUS
+cp .env.example .env
+<span class="c"># set NEXUS_API_KEY and DASHBOARD_PROXY_TOKEN;</span>
+<span class="c"># RPC URLs default to publicnode in the smoke run</span>
+
+<span class="c"># 2. start every service</span>
+docker compose up -d --build
+
+<span class="c"># 3. open</span>
+<span class="c"># dashboard  http://localhost:3000  (sign in with DASHBOARD_PROXY_TOKEN)</span>
+<span class="c"># API        http://localhost:8000/health</span></pre>
+<pre class="code"><span class="c"># end-to-end smoke test (fresh volume)</span>
+docker compose down -v
+bash scripts/smoke.sh
+
+<span class="c"># unit tests, per service</span>
+cd services/evm_listener &amp;&amp; npm run typecheck &amp;&amp; npm test
+cd services/mev_analyzer &amp;&amp; .venv/bin/python -m pytest
+cd apps/dashboard &amp;&amp; npm run lint &amp;&amp; npm test &amp;&amp; npm run build</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <h2>Safety rails</h2>
+      <div class="grid three">
+        <div class="mini"><h4>Read-only</h4><p>No private keys, signing, trading or transaction submission. <code>EXECUTION_ENABLED</code> stays false.</p></div>
+        <div class="mini"><h4>Evidence first</h4><p>Findings cite transaction hashes, block numbers, contracts and timestamps. The AI agent may not invent activity.</p></div>
+        <div class="mini"><h4>No secrets in code</h4><p>Credentials come from the environment only. The dashboard proxy refuses anonymous callers.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="docs" class="section alt">
+    <div class="wrap">
+      <h2>Documentation</h2>
+      <div class="grid links">
+        <a class="link" href="https://github.com/nftboy07/NEXUS/blob/main/docs/BLUEPRINT.md"><b>Blueprint</b><span>The full design, all 20 sections</span></a>
+        <a class="link" href="https://github.com/nftboy07/NEXUS/blob/main/docs/architecture.md"><b>Architecture</b><span>Data flow, failover, reorgs</span></a>
+        <a class="link" href="https://github.com/nftboy07/NEXUS/blob/main/docs/roadmap.md"><b>Roadmap</b><span>Phases 1–7 and acceptance criteria</span></a>
+        <a class="link" href="https://github.com/nftboy07/NEXUS/blob/main/docs/database.md"><b>Database</b><span>Schema and migrations</span></a>
+        <a class="link" href="https://github.com/nftboy07/NEXUS/blob/main/docs/operations.md"><b>Operations</b><span>Running and monitoring the stack</span></a>
+        <a class="link" href="https://github.com/nftboy07/NEXUS/blob/main/docs/BUDGET.md"><b>Budget</b><span>$200 prototype allocation</span></a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">Built by <b>Crypto Relic</b> · <a href="https://github.com/nftboy07/NEXUS">github.com/nftboy07/NEXUS</a> · MIT licensed</div>
+</footer>
+</body>
+</html>
